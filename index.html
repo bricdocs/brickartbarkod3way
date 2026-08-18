@@ -3,12 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Hard-Reset v7.44</title>
+    <title>Jannersten Mobile Core v7.45</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
         .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
-        video { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(5) brightness(0.8); }
+        
+        /* v7.41'in O ÇOK SEVİLEN PÜRÜZSÜZ SİYAH BEYAZ CSS FİLTRESİNE GERİ DÖNÜLDÜ */
+        video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+            filter: grayscale(1) contrast(5) brightness(0.9); 
+        }
+        
         .guide-line { position: absolute; top: 50%; left: 0; width: 100%; height: 216px; background: rgba(0, 255, 204, 0.05); border-top: 2px dashed #00ffcc; border-bottom: 2px dashed #00ffcc; z-index: 10; }
         .control-panel { display: flex; justify-content: center; gap: 10px; margin: 10px auto; max-width: 400px; }
         button { padding: 10px 15px; border: none; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; }
@@ -27,7 +35,7 @@
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.44 (Zorla Sıfırlamalı)</h2>
+    <h2>Jannersten v7.45 (Sadece Cep Sürümü)</h2>
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
@@ -50,10 +58,10 @@
         <div class="log-title">Teşhis Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
-    <div class="debug-info" id="debug">Zorunlu Anlık Sıfırlama Aktif</div>
+    <div class="debug-info" id="debug">Mobile Core v7.45 Aktif</div>
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
-    <script>
+<script>
 const JANNERSTEN_MAP = {
     // --- MAÇA SERİSİ (Spades - S) ---
     "S3": ["0001110", "0111000"], // [YENİ]
@@ -219,17 +227,13 @@ function tick() {
             if (isSystemLocked) return;
             const widths = [];
             for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
-            
-            const minW = Math.min(...widths); const maxW = Math.max(...widths);
-            if (maxW / minW < 1.8) { resetStability(); return; }
             const sum = widths.reduce((a, b) => a + b, 0); const avgWidth = sum / widths.length;
             if (avgWidth < 3.0) { resetStability(); return; }
 
             let binaryCode = "";
             for (let i = 0; i < widths.length; i++) binaryCode += (widths[i] > avgWidth) ? "1" : "0";
 
-            // --- SİZİN BULDUĞUNUZ O KUSURSUZ SERT SIFIRLAMA MATEMATİĞİ EN TEPEYE BAĞLANDI ---
-            // Eğer yeni gelen kod, bir önceki karedeki kodla uyuşmuyorsa, sayacı anında acımadan baltayla kes ve sıfırla!
+            // --- SİZİN HARD RESET MANTILIĞINIZ: CEP İÇİN ARINDIRILMIŞ VE EN TEPEYE BAĞLANMIŞ HALİ ---
             if (binaryCode === lastDetectedRawCode) { 
                 rawCodeMatchCount++; 
             } else { 
@@ -237,7 +241,6 @@ function tick() {
                 rawCodeMatchCount = 1; 
             }
 
-            // 5 Kare Kararlılık süzgeci tam burada devreye girer
             if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) return;
 
             const reversedCode = binaryCode.split("").reverse().join("");
@@ -258,16 +261,13 @@ function tick() {
                 setTimeout(() => { isSystemLocked = false; resetStability(); resetToWaiting(); }, 1500);
             } else { resultDiv.innerText = "Tanımsız Kart"; resultDiv.style.color = "#ff9500"; }
             debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound}`;
-        } else { 
-            // Kadraj anlık olarak boşaldığı ilk milisaniyede sayacı zorla sıfırla (Cebinde sayı birikemez!)
-            resetStability(); 
-        }
+        } else { resetStability(); }
     }
 }
 function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
 function resetToWaiting() {
     if (!isSystemLocked && !isWarmUpActive) { resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; }
-    debugDiv.innerText = "v7.44 Sert Sıfırlama Modu Yayında";
+    debugDiv.innerText = "v7.45 Sadece Cep Sürümü";
 }
 startCamera(currentFacingMode);
 </script>
