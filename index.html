@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Modüler Sistem v7.32</title>
-    <script src="barkod-data.js?v=7.32"></script>
+    <title>Jannersten Orijinal Kararlı Sistem</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -28,33 +27,63 @@
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.32 (Modüler Kararlı)</h2>
+
+    <h2>Jannersten Canlı Tarayıcı</h2>
+    
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
     </div>
+
     <div class="slider-box">
         <label for="threshSlider">Işık Dengesi Ayarı: <span id="threshVal">115</span></label><br>
         <input type="range" id="threshSlider" min="60" max="170" value="115">
     </div>
+
     <div class="container">
         <video id="webcam" autoplay playsinline muted></video>
         <div class="guide-line"></div>
     </div>
+
     <div class="result-box" id="result">Kart Bekleniyor...</div>
+    
     <div class="code-display-box" id="codeDisplayBox">
         <span class="code-label">Okunan Kart Kodları:</span>
         <div style="margin-top:5px;">Düz: <span class="code-row" id="codeFlat">-</span></div>
         <div>Ters: <span class="code-row" id="codeReverse">-</span></div>
     </div>
+
     <div class="log-container">
         <div class="log-title">Okunan Kartlar Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
-    <div class="debug-info" id="debug">v7.31 Motor Çekirdeği Korundu</div>
+
+    <div class="debug-info" id="debug">Orijinal Entegre Motor Aktif</div>
+
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
+// --- SİZİN BERABER HAZIRLADIĞIMIZ ORİJİNAL VERİ TABANINIZ (MİLİMETRİK KORUNDU) ---
+const JANNERSTEN_MAP = {
+    "0101001": "Maça 4",
+    "1001010": "Maça 4",
+    "0101100": "Maça 5",
+    "0011010": "Maça 5",
+    "0011100": "Maça 6", 
+    "0100111": "Sinek 10",
+    "1110010": "Sinek 10",
+    "0101000": "Sinek 6",
+    "0001010": "Sinek 6",
+    "0100010": "Sinek 5 / Kupa 10", // Orijinal ortak isminiz aynen korundu
+    "0101010": "Karo Kız", 
+    "0101110": "Karo 4",
+    "0111010": "Karo 4",
+    "0000101": "Kupa Kız",
+    "1010000": "Kupa Kız",
+    "0111100": "Kupa 9",
+    "0011110": "Kupa 9"
+};
+
 const video = document.getElementById('webcam');
 const canvas = document.getElementById('analyzerCanvas');
 const ctx = canvas.getContext('2d');
@@ -139,9 +168,7 @@ clearLogBtn.addEventListener('click', () => {
     rawCodeMatchCount = 0;
     resetToWaiting();
 });
-</script>
 
-<script>
 function tick() {
     if (video.readyState >= 2) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -157,7 +184,6 @@ function tick() {
         for (let y = 40; y < 270; y += 2) {
             let minGray = 255;
             let maxGray = 0;
-            let totalBrightness = 0; 
             const tempGrayRow = [];
 
             for (let x = 0; x < canvas.width; x++) {
@@ -168,14 +194,8 @@ function tick() {
                 const gray = 0.299 * r + 0.587 * g + 0.114 * b;
                 
                 tempGrayRow.push(gray);
-                totalBrightness += gray;
                 if (gray < minGray) minGray = gray;
                 if (gray > maxGray) maxGray = gray;
-            }
-
-            const averageBrightness = totalBrightness / canvas.width;
-            if (averageBrightness < 95) {
-                continue; 
             }
 
             const adaptiveThreshold = ((minGray + maxGray) / 2) * sensitivityMultiplier;
@@ -285,7 +305,7 @@ function resetToWaiting() {
         codeFlatSpan.innerText = "-";
         codeReverseSpan.innerText = "-";
     }
-    debugDiv.innerText = "Modüler Kararlı Sürüm v7.32 Aktif";
+    debugDiv.innerText = "Orijinal Kararlı Yapı Geri Yüklendi";
 }
 
 startCamera(currentFacingMode);
