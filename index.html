@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Maskeli Tarayıcı v7.23</title>
+    <title>Jannersten Orijinal v7.25</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -48,7 +48,7 @@
 </head>
 <body>
 
-    <h2>Jannersten v7.23 (Parlaklık Maskeli)</h2>
+    <h2>Jannersten v7.25 (v7.22 Tabanlı)</h2>
     
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
@@ -56,7 +56,7 @@
     </div>
 
     <div class="slider-box">
-        <label for="threshSlider">İnce Işık Toleransı (Çarpan): <span id="threshVal">1.0</span></label><br>
+        <label for="threshSlider">İnce Işık Toleransı (Çarpan): <span id="threshVal">1.00</span></label><br>
         <input type="range" id="threshSlider" min="80" max="120" value="100">
     </div>
 
@@ -72,16 +72,21 @@
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
 
-    <div class="debug-info" id="debug">Maskeli Işık Dengesi Aktif</div>
+    <div class="debug-info" id="debug">v7.22 Orijinal Motoru Geri Yüklendi</div>
 
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
+// --- GEÇMİŞ MAP DATA VE YENİ MAÇA 6 YERİ ---
 const JANNERSTEN_MAP = {
     "0101001": "Maça 4",
     "1001010": "Maça 4",
     "0101100": "Maça 5",
-    "0011010": "Maça 5"
+    "0011010": "Maça 5",
+    
+    // Maça 6 (S6) Kartı Tahmini / Test Alanı
+    "0101110": "Maça 6", 
+    "0111010": "Maça 6"
 };
 
 const video = document.getElementById('webcam');
@@ -178,18 +183,11 @@ function tick() {
         let bestTransitionsArray = [];
         let bestYFound = 240;
 
-        // v7.19/7.21 Geniş Tünel Alanı (40 - 270)
+        // v7.22'nin o telefonu hiç ısıtmayan hafif satır bazlı akıllı kontrast döngüsü
         for (let y = 40; y < 270; y += 2) {
-            
-            // --- v7.23 YENİLİK: KÖR NOKTA MASKELİ DİNAMİK EŞİKLEME ---
-            // Tavan ışığının tünel dışındaki parlama gürültülerini hesaba katmıyoruz.
-            // min ve max hesabı sadece tünelin içindeki (X ekseninde güvenli koridordaki) piksellerden yapılır.
             let minGray = 255;
             let maxGray = 0;
             const tempGrayRow = [];
-
-            const startX = Math.floor(canvas.width * 0.15);
-            const endX = Math.floor(canvas.width * 0.85);
 
             for (let x = 0; x < canvas.width; x++) {
                 const pixelIndex = (y * canvas.width + x) * 4;
@@ -199,16 +197,10 @@ function tick() {
                 const gray = 0.299 * r + 0.587 * g + 0.114 * b;
                 
                 tempGrayRow.push(gray);
-                
-                // Işık dengesini sadece kartın duracağı orta bölgeye (tünel içine) bakarak kuruyoruz.
-                // Bu sayede dışarıdaki tavan avizesinin parlaması hesabı bozamaz.
-                if (x >= startX && x <= endX) {
-                    if (gray < minGray) minGray = gray;
-                    if (gray > maxGray) maxGray = gray;
-                }
+                if (gray < minGray) minGray = gray;
+                if (gray > maxGray) maxGray = gray;
             }
 
-            // Tünel içine kilitlenmiş göz bebeği dengesi
             const adaptiveThreshold = ((minGray + maxGray) / 2) * sensitivityMultiplier;
 
             const binaryRow = [];
@@ -217,6 +209,9 @@ function tick() {
             }
 
             const trans = [];
+            const startX = Math.floor(canvas.width * 0.15);
+            const endX = Math.floor(canvas.width * 0.85);
+            
             for (let i = startX; i < endX; i++) {
                 if (binaryRow[i] !== binaryRow[i+1]) trans.push(i);
             }
@@ -251,7 +246,7 @@ function tick() {
                 binaryCode += (widths[i] > avgWidth) ? "1" : "0";
             }
 
-            // 5 Kare Kararlılık Kontrolü
+            // v7.22'deki o meşhur 5 Kare Kararlılık Süzgeci
             if (binaryCode === lastDetectedRawCode) {
                 rawCodeMatchCount++;
             } else {
@@ -260,7 +255,7 @@ function tick() {
             }
 
             if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) {
-                debugDiv.innerText = `Sinyal Dengeleniyor... (${rawCodeMatchCount}/${STABILITY_REQUIRED_FRAMES})`;
+                debugDiv.innerText = `Sinyal Filtreleniyor... (${rawCodeMatchCount}/${STABILITY_REQUIRED_FRAMES})`;
                 return;
             }
 
@@ -299,7 +294,7 @@ function tick() {
                 resultDiv.innerText = "Tanımsız Kart";
                 resultDiv.style.color = "#ff9500";
             }
-            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound} | Kod: ${binaryCode}`;
+            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound} | Kararlı Kod: ${binaryCode}`;
         } else {
             resetStability();
         }
@@ -313,10 +308,10 @@ function resetStability() {
 
 function resetToWaiting() {
     if (!isSystemLocked) {
-        resultDiv.innerText = "Kart Bekleniyor... (Maskeli Mod)";
+        resultDiv.innerText = "Kart Bekleniyor...";
         resultDiv.style.color = "#fff";
     }
-    debugDiv.innerText = "Tavan Korumalı Akıllı Eşikleyici v7.23 Aktif";
+    debugDiv.innerText = "Kararlı Sürüm v7.25 (v7.22 Çekirdeği) Aktif";
 }
 
 startCamera(currentFacingMode);
