@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Akıllı Tarayıcı v6.3</title>
+    <title>Jannersten Canlı Akıllı Tarayıcı v6.4</title>
     <style>
         body {
             font-family: sans-serif;
@@ -25,7 +25,13 @@
             border-radius: 8px;
             overflow: hidden;
         }
-        video { width: 100%; height: 100%; object-fit: cover; }
+        video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+            /* YENİLİK: Python filtresini donanımsal olarak tarayıcıya uyguluyoruz */
+            filter: grayscale(1) contrast(5) brightness(0.9);
+        }
         .guide-line {
             position: absolute;
             top: 50%;
@@ -49,30 +55,20 @@
         .debug-info {
             margin-top: 10px;
             font-family: monospace;
-            font-size: 12px;
+            font-size: 13px;
             color: #00ffcc;
             background: #000;
             padding: 10px;
             border-radius: 6px;
             min-width: 280px;
+            line-height: 1.6;
         }
-        /* YENİLİK: Canlı Siyah Beyaz Gözetleme Penceresi */
-        .preview-box {
-            margin-top: 10px;
-            text-align: center;
-        }
-        #analyzerCanvas {
-            display: block;
-            width: 100%;
-            max-width: 200px;
-            border: 1px solid #555;
-            background: #000;
-        }
+        canvas { display: none; }
     </style>
 </head>
 <body>
 
-    <h2>Jannersten Tarayıcı v6.3</h2>
+    <h2>Jannersten Tarayıcı v6.4</h2>
 
     <div class="container">
         <video id="webcam" autoplay playsinline muted></video>
@@ -83,17 +79,14 @@
     
     <div class="debug-info" id="debug">
         Tarama Durumu: Başlatılıyor...<br>
-        Algılanan Geçiş Sayısı: 0<br>
+        Algılanan Geçiş Noktası: -<br>
         Okunan Ham Kod: -
     </div>
 
-    <!-- Hata Ayıklama İçin Canlı Önizleme Alanı -->
-    <div class="preview-box">
-        <div>Yazılımın Gördüğü Filtre (Debug):</div>
-        <canvas id="analyzerCanvas"></canvas>
-    </div>
+    <canvas id="analyzerCanvas"></canvas>
 
 <script>
+// --- MAÇA 4 HARİTASI ---
 const JANNERSTEN_MAP = {
     "0101001": "Maça 4 (4 of Spades)",
     "1001010": "Maça 4 (4 of Spades) [Ters]"
@@ -109,77 +102,66 @@ const guideLine = document.getElementById('guide');
 async function initCamera() {
     try {
         const constraints = {
-            video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }
+            video: { facingMode: "environment", width: 640, height: 480 }
         };
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
         video.addEventListener('loadedmetadata', () => {
-            // Tuhaflıkları engellemek için canvas boyutunu kameraya eşitliyoruz
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            canvas.width = 640;
+            canvas.height = 480;
             tick();
         });
     } catch (err) {
-        resultDiv.innerText = "Kamera İzni Eksik!";
+        resultDiv.innerText = "Kamera İzni Alınamadı!";
         console.error(err);
     }
 }
 
 function tick() {
     if (video.readyState === video.HAVE_CURRENT_DATA) {
-        // Kamerayı canvasa çiz
+        // CSS filtresi uygulanmış video görüntüsünü canvas'a basıyoruz
+        ctx.filter = "grayscale(1) contrast(5) brightness(0.9)";
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        // Canvas görüntüsünü manipüle etmek için tamamını alalım (Görsel debug için)
-        const fullImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = fullImageData.data;
         
         const midY = Math.floor(canvas.height / 2);
         
-        // Hata tespiti için istatistik tutalım
-        let maxTransitions = 0;
         let bestY = midY;
+        let maxTransitions = 0;
         let bestTransitionsArray = [];
 
-        // Önce tüm görseli siyah beyaza çevirip debug ekranına basalım (Kullanıcı görsün diye)
-        for (let y = 0; y < canvas.height; y++) {
-            const rowStartIndex = y * canvas.width * 4;
+        // Kırmızı çizginin etrafındaki 60 piksellik alanda dikey tarama (Akıllı Kilitlenme)
+        for (let y = midY - 30; y < midY + 30; y++) {
+            const imgData = ctx.getImageData(0, y, canvas.width, 1).data;
             
-            // Satır piksellerini topla
-            const rowRGBA = [];
-            for (let x = 0; x < canvas.width; x++) {
-                const idx = rowStartIndex + (x * 4);
-                rowRGBA.push(data[idx], data[idx+1], data[idx+2], data[idx+3]);
-            }
-            
-            const binaryRow = applyAdaptiveContrastThreshold(rowRGBA);
-            
-            // Debug için canvas görüntüsünü siyah-beyaz yapıyoruz
-            for (let x = 0; x < canvas.width; x++) {
-                const idx = rowStartIndex + (x * 4);
-                const color = binaryRow[x] === 1 ? 255 : 0;
-                data[idx] = color;     // R
-                data[idx+1] = color;   // G
-                data[idx+2] = color;   // B
+            // Hızlı Siyah-Beyaz tespiti
+            const binaryRow = [];
+            for (let i = 0; i < imgData.length; i += 4) {
+                binaryRow.push(imgData[i] < 128 ? 0 : 1); // 0: Siyah, 1: Beyaz
             }
 
-            // Sadece kırmızı çizginin yakınındaki koridorda (Y ekseni) Jannersten çizgisi ara
-            if (y > midY - 80 && y < midY + 80) {
-                const currentTransitions = getTransitions(binaryRow);
-                if (currentTransitions.length >= 6 && currentTransitions.length <= 18) {
-                    if (currentTransitions.length > maxTransitions) {
-                        maxTransitions = currentTransitions.length;
-                        bestY = y;
-                        bestTransitionsArray = currentTransitions;
-                    }
+            // Geçiş noktalarını bul
+            const trans = [];
+            // Sağdan ve soldan %15 kırpıyoruz (Kenar gürültülerini silmek için)
+            const startX = Math.floor(binaryRow.length * 0.15);
+            const endX = Math.floor(binaryRow.length * 0.85);
+            
+            for (let i = startX; i < endX; i++) {
+                if (binaryRow[i] !== binaryRow[i+1]) {
+                    trans.push(i);
+                }
+            }
+
+            // Jannersten çizgileri için en kararlı geçiş koridoru
+            if (trans.length >= 6 && trans.length <= 16) {
+                if (trans.length > maxTransitions) {
+                    maxTransitions = trans.length;
+                    bestY = y;
+                    bestTransitionsArray = trans;
                 }
             }
         }
-        
-        // Siyah beyaz güncellenmiş görüntüyü debug ekranına bas
-        ctx.putImageData(fullImageData, 0, 0);
 
-        // Kod çözme adımı
+        // Kod Çözme İşlemi
         if (bestTransitionsArray.length >= 7) {
             const widths = [];
             for (let i = 0; i < 7; i++) {
@@ -194,6 +176,7 @@ function tick() {
                 binaryCode += (widths[i] > avgWidth) ? "1" : "0";
             }
 
+            // Kart Kontrolü
             let foundCard = JANNERSTEN_MAP[binaryCode];
 
             if (foundCard) {
@@ -206,55 +189,20 @@ function tick() {
                 guideLine.style.backgroundColor = "#ff9500";
             }
             
-            debugDiv.innerHTML = `Tarama Durumu: <b>Çizgi Kilitlendi!</b><br>` +
-                                 `Algılanan Geçiş Sayısı: ${bestTransitionsArray.length}<br>` +
-                                 `Okunan Ham Kod: <span style='color:#fff'>${binaryCode}</span> (Y:${bestY})`;
+            debugDiv.innerHTML = `Tarama Durumu: <b style="color:#00ffcc">Çizgiler Okunuyor</b><br>` +
+                                 `Algılanan Geçiş Noktası: ${bestTransitionsArray.length}<br>` +
+                                 `Okunan Ham Kod: <span style="color:#fff; font-weight:bold">${binaryCode}</span>`;
         } else {
             resultDiv.innerText = "Kart Bekleniyor...";
             resultDiv.style.color = "#fff";
             guideLine.style.backgroundColor = "#ff3b30";
             
-            debugDiv.innerHTML = `Tarama Durumu: Satırlar taranıyor...<br>` +
-                                 `Algılanan En İyi Geçiş Sayısı: ${maxTransitions}<br>` +
+            debugDiv.innerHTML = `Tarama Durumu: Kart aranıyor...<br>` +
+                                 `Algılanan En İyi Geçiş Noktası: ${maxTransitions}<br>` +
                                  `Okunan Ham Kod: -`;
         }
     }
     requestAnimationFrame(tick);
-}
-
-function applyAdaptiveContrastThreshold(rgbaData) {
-    const grayPixels = [];
-    let minGray = 255;
-    let maxGray = 0;
-
-    for (let i = 0; i < rgbaData.length; i += 4) {
-        const gray = 0.299 * rgbaData[i] + 0.587 * rgbaData[i+1] + 0.114 * rgbaData[i+2];
-        grayPixels.push(gray);
-        if (gray < minGray) minGray = gray;
-        if (gray > maxGray) maxGray = gray;
-    }
-
-    const dynamicThreshold = (minGray + maxGray) / 2;
-    const binaryPixels = [];
-    for (let i = 0; i < grayPixels.length; i++) {
-        // Beyaz kart zeminini güçlendirmek için gürültü filtresi
-        binaryPixels.push(grayPixels[i] < (dynamicThreshold - 10) ? 0 : 1);
-    }
-    return binaryPixels;
-}
-
-function getTransitions(pixels) {
-    const trans = [];
-    // Kenar gürültülerini (ekranın en sağı ve en solu) eliyoruz, sadece orta bölgeye odaklanıyoruz
-    const startX = Math.floor(pixels.length * 0.1);
-    const endX = Math.floor(pixels.length * 0.9);
-    
-    for (let i = startX; i < endX; i++) {
-        if (pixels[i] !== pixels[i+1]) {
-            trans.push(i);
-        }
-    }
-    return trans;
 }
 
 initCamera();
