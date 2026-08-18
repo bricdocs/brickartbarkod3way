@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Kesin Tanıma v7.52</title>
+    <title>Jannersten Canlı Ses v7.53</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -32,7 +32,7 @@
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.52 (Kesin Tanıma Lab)</h2>
+    <h2>Jannersten v7.53 (Canlı Sesli Test Lab)</h2>
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
@@ -56,11 +56,11 @@
         <div class="log-title">Onaylanmış Harita Listesi (Toplam: <span id="cardCount">0</span>):</div>
         <div class="log-list" id="logList">Henüz kayıt yapılmadı.</div>
     </div>
-    <div class="debug-info" id="debug">Dizi Tarama Filtresi Aktif</div>
+    <div class="debug-info" id="debug">Otomatik Ses ve Hücre Tarama Aktif</div>
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
-// --- v7.52 TAMİR EDİLEN VE PARANTEZ HÜCRESİ DOĞRULANAN GERÇEK HARİTA ---
+// --- v7.53 O SİZİN EN SON BULDUĞUNUZ VE ONAYLADIĞINIZ KARARLI HARİTA ---
 const JANNERSTEN_MAP = {
     "S3": ["0001110", "0111000"],
     "S9": ["0110000", "0000110"], 
@@ -101,20 +101,21 @@ let isSystemLocked = false; let isWarmUpActive = false;
 let lastDetectedRawCode = ""; let rawCodeMatchCount = 0;        
 const STABILITY_REQUIRED_FRAMES = 5; 
 
-let activeFlatCode = "";
-let activeReverseCode = "";
+let activeFlatCode = ""; let activeReverseCode = "";
+let isBeepTriggeredForCurrentCard = false; // Mükerrer biplemeyi kesen emniyet kilidi
 
 threshSlider.addEventListener('input', (e) => {
     const val = parseInt(e.target.value); otsuMultiplier = val / 100;
     threshValSpan.innerText = otsuMultiplier.toFixed(2);
 });
 
-function playBeepSound() {
+// v7.53 Yenilik: İki farklı ses frekansı açıldı (Biri otomatik yakalama sesi, diğeri buton klik sesi)
+function playBeepSound(frequency = 1050) {
     try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
-        oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(1050, audioCtx.currentTime); 
+        oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime); 
         gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime); oscillator.connect(gainNode);
         gainNode.connect(audioCtx.destination); oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.08); 
     } catch (e) {}
@@ -145,7 +146,7 @@ clearLogBtn.addEventListener('click', () => {
     if (isWarmUpActive) return;
     scannedCardsSet.clear(); cardLogArray = []; cardCountSpan.innerText = "0";
     lastDetectedRawCode = ""; rawCodeMatchCount = 0; activeFlatCode = ""; activeReverseCode = "";
-    codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-";
+    codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; isBeepTriggeredForCurrentCard = false;
     saveCodeBtn.disabled = true; saveCodeBtn.innerText = "Kodu Listeye Ekle";
     isWarmUpActive = true; isSystemLocked = true;
     resultDiv.innerText = "Deste Sıfırlanıyor (1.5sn)..."; resultDiv.style.color = "#ff3b30";
@@ -178,10 +179,7 @@ function calculateOtsuThreshold(data, width, height) {
 
 <script>
 function updateInputValue(index, value) {
-    if (cardLogArray[index]) {
-        cardLogArray[index].userTyped = value.toUpperCase();
-        renderLogList();
-    }
+    if (cardLogArray[index]) { cardLogArray[index].userTyped = value.toUpperCase(); renderLogList(); }
 }
 
 function renderLogList() {
@@ -198,7 +196,6 @@ function renderLogList() {
     logListDiv.innerHTML = htmlContent;
 }
 
-// --- v7.52 GEOMETRİK TAMİR: Köşeli parantezin içindeki elemanları tek tek tarayan kararlı hücre ---
 function checkMapMatch(binaryCode) {
     for (let cardName in JANNERSTEN_MAP) {
         const arr = JANNERSTEN_MAP[cardName];
@@ -213,24 +210,18 @@ saveCodeBtn.addEventListener('click', () => {
     let isAlreadySaved = cardLogArray.some(el => el.flatCode === activeFlatCode);
     if (isAlreadySaved) { resultDiv.innerText = "Bu Kod Zaten Listede Var!"; resultDiv.style.color = "#ff3b30"; return; }
 
-    playBeepSound();
+    playBeepSound(600); // Buton onaylama klik sesi (Düşük frekans)
     
-    // Hücre tamir edildiği için artık ismi otomatik olarak bulur ve input kutusunun içine yazar!
     let autoMatch = checkMapMatch(activeFlatCode);
     let initialName = autoMatch ? autoMatch.name : "";
 
-    cardLogArray.push({
-        userTyped: initialName,
-        flatCode: activeFlatCode,
-        revCode: activeReverseCode
-    });
-    
+    cardLogArray.push({ userTyped: initialName, flatCode: activeFlatCode, revCode: activeReverseCode });
     cardCountSpan.innerText = cardLogArray.length;
     renderLogList();
     
     isSystemLocked = true; saveCodeBtn.disabled = true; saveCodeBtn.innerText = "Başarıyla Eklendi 👍";
     resultDiv.innerText = "Lütfen Kartı Değiştirin..."; resultDiv.style.color = "#ff9500";
-    setTimeout(() => { isSystemLocked = false; activeFlatCode = ""; activeReverseCode = ""; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; saveCodeBtn.innerText = "Kodu Listeye Ekle"; resetStability(); resetToWaiting(); }, 1500);
+    setTimeout(() => { isSystemLocked = false; activeFlatCode = ""; activeReverseCode = ""; isBeepTriggeredForCurrentCard = false; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; saveCodeBtn.innerText = "Kodu Listeye Ekle"; resetStability(); resetToWaiting(); }, 1500);
 });
 
 function tick() {
@@ -264,30 +255,33 @@ function tick() {
             for (let i = 0; i < widths.length; i++) binaryCode += (widths[i] > avgWidth) ? "1" : "0";
             if (binaryCode === lastDetectedRawCode) { rawCodeMatchCount++; } 
             else { lastDetectedRawCode = binaryCode; rawCodeMatchCount = 1; }
+            
             if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) return;
 
             const reversedCode = binaryCode.split("").reverse().join("");
             codeFlatSpan.innerText = binaryCode; codeReverseSpan.innerText = reversedCode;
             
-            // Hücre tamir edildiği için ekranda da artık anında yeşil renkli ismi basar!
-            let match = checkMapMatch(binaryCode);
-            if (match) {
-                resultDiv.innerText = `🎉 ${match.name} (${match.type})`; resultDiv.style.color = "#00ffcc";
-            } else {
-                resultDiv.innerText = "Sinyal Yakalandı 🎯"; resultDiv.style.color = "#ff9500";
+            // --- v7.53 AKILLI GERİ YÜKLEME: OTOMATİK SİNYAL BİP SESİ ---
+            // Kod 5 kare boyunca kilitlendiği an, telefona bakmanıza gerek kalmadan otomatik olarak BİP patlar!
+            if (!isBeepTriggeredForCurrentCard) {
+                playBeepSound(1050); // Keskin sinyal yakalama sesi
+                isBeepTriggeredForCurrentCard = true;
             }
+
+            let match = checkMapMatch(binaryCode);
+            if (match) { resultDiv.innerText = `🎉 ${match.name} (${match.type})`; resultDiv.style.color = "#00ffcc"; } 
+            else { resultDiv.innerText = "Sinyal Yakalandı 🎯"; resultDiv.style.color = "#ff9500"; }
             
-            activeFlatCode = binaryCode; activeReverseCode = reversedCode;
-            saveCodeBtn.disabled = false;
+            activeFlatCode = binaryCode; activeReverseCode = reversedCode; saveCodeBtn.disabled = false;
         } else { 
-            if (!isSystemLocked) { saveCodeBtn.disabled = true; activeFlatCode = ""; activeReverseCode = ""; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; resetStability(); resetToWaiting(); }
+            if (!isSystemLocked) { saveCodeBtn.disabled = true; activeFlatCode = ""; activeReverseCode = ""; isBeepTriggeredForCurrentCard = false; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; resetStability(); resetToWaiting(); }
         }
     }
 }
 function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
 function resetToWaiting() {
     if (!isSystemLocked && !isWarmUpActive) { resultDiv.innerText = "Rehber Çizgiye Hizalayın..."; resultDiv.style.color = "#fff"; }
-    debugDiv.innerText = "v7.52 Tamir Sürümü Yayında";
+    debugDiv.innerText = "v7.53 Canlı Ses Aktif";
 }
 startCamera(currentFacingMode);
 </script>
