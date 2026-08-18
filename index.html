@@ -3,8 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Kesin Çözüm v7.21</title>
-    <script src="barkod-data.js?v=7.21"></script>
+    <title>Jannersten Modüler Sistem v7.32</title>
+    
+    <!-- ÖNBELLEK ENGELLEYİCİ: Tarayıcının eski dosyayı zorla silmesini sağlar -->
+    <script src="barkod-data.js?v=7.32"></script>
+    
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -40,16 +43,47 @@
 
         .result-box { margin: 5px auto; padding: 10px; background: #1e1e1e; border-radius: 8px; font-size: 20px; font-weight: bold; width: 280px; border: 1px solid #333; }
         
+        .code-display-box {
+            margin: 10px auto;
+            max-width: 320px;
+            background: #000;
+            border: 2px solid #444;
+            border-radius: 10px;
+            padding: 12px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 18px;
+            font-weight: bold;
+            line-height: 1.8;
+            text-align: center;
+        }
+        .code-row {
+            user-select: all; 
+            -webkit-user-select: all;
+            color: #ffffff;
+            background: #222;
+            padding: 4px 10px;
+            border-radius: 5px;
+            display: inline-block;
+            margin: 4px 0;
+            letter-spacing: 2px;
+        }
+        .code-label {
+            font-size: 13px;
+            color: #888;
+            display: block;
+            margin-top: 5px;
+        }
+
         .log-container { margin: 10px auto; max-width: 350px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; text-align: left; }
         .log-title { font-size: 12px; color: #00ffcc; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 3px; }
         .log-list { font-family: monospace; font-size: 14px; color: #fff; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
 
-        .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #888; text-align: center; }
+        .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #555; text-align: center; }
     </style>
 </head>
 <body>
 
-    <h2>Jannersten v7.21 (Kararlılık Süzgeçli)</h2>
+    <h2>Jannersten v7.32 (Önbellek Korumalı)</h2>
     
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
@@ -68,23 +102,22 @@
 
     <div class="result-box" id="result">Kart Bekleniyor...</div>
     
+    <div class="code-display-box" id="codeDisplayBox">
+        <span class="code-label">Okunan Kart Kodları:</span>
+        <div style="margin-top:5px;">Düz: <span class="code-row" id="codeFlat">-</span></div>
+        <div>Ters: <span class="code-row" id="codeReverse">-</span></div>
+    </div>
+
     <div class="log-container">
         <div class="log-title">Okunan Kartlar Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
 
-    <div class="debug-info" id="debug">Kararlılık Motoru Aktif</div>
+    <div class="debug-info" id="debug">v7.31 Motor Çekirdeği Korundu</div>
 
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
-// const JANNERSTEN_MAP = {
-//     "0101001": "Maça 4",
-//     "1001010": "Maça 4",
-//     "0101100": "Maça 5",
-//     "0011010": "Maça 5"
-// };
-
 const video = document.getElementById('webcam');
 const canvas = document.getElementById('analyzerCanvas');
 const ctx = canvas.getContext('2d');
@@ -97,25 +130,28 @@ const clearLogBtn = document.getElementById('clearLogBtn');
 const threshSlider = document.getElementById('threshSlider');
 const threshValSpan = document.getElementById('threshVal');
 
+const codeFlatSpan = document.getElementById('codeFlat');
+const codeReverseSpan = document.getElementById('codeReverse');
+
 canvas.width = 640;
 canvas.height = 480;
 
 let currentStream = null;
 let currentFacingMode = "environment"; 
-let globalThreshold = 115;
 let tickInterval = null;
+let sensitivityMultiplier = 1.0; 
 
 let scannedCardsSet = new Set(); 
 let isSystemLocked = false; 
 
-// --- v7.21 1. SEÇENEK: ZAMAN TABANLI ARDIŞIK DOĞRULAMA DEĞİŞKENLERİ ---
-let lastDetectedRawCode = "";     // En son okunan ham binary dizi
-let rawCodeMatchCount = 0;        // Aynı kodun üst üste kaç kare boyunca okunduğunun sayacı
-const STABILITY_REQUIRED_FRAMES = 5; // Onaylanması için kodun kesintisiz 5 kare boyunca birebir aynı kalması şartı
+let lastDetectedRawCode = "";     
+let rawCodeMatchCount = 0;        
+const STABILITY_REQUIRED_FRAMES = 5; 
 
 threshSlider.addEventListener('input', (e) => {
-    globalThreshold = parseInt(e.target.value);
-    threshValSpan.innerText = globalThreshold;
+    const val = parseInt(e.target.value);
+    sensitivityMultiplier = val / 100;
+    threshValSpan.innerText = sensitivityMultiplier.toFixed(2);
 });
 
 function playBeepSound() {
@@ -180,14 +216,35 @@ function tick() {
         let bestYFound = 240;
 
         for (let y = 40; y < 270; y += 2) {
-            const binaryRow = [];
+            let minGray = 255;
+            let maxGray = 0;
+            let totalBrightness = 0; 
+            const tempGrayRow = [];
+
             for (let x = 0; x < canvas.width; x++) {
                 const pixelIndex = (y * canvas.width + x) * 4;
                 const r = data[pixelIndex];
                 const g = data[pixelIndex + 1];
                 const b = data[pixelIndex + 2];
                 const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                binaryRow.push(gray < globalThreshold ? 0 : 1);
+                
+                tempGrayRow.push(gray);
+                totalBrightness += gray;
+                
+                if (gray < minGray) minGray = gray;
+                if (gray > maxGray) maxGray = gray;
+            }
+
+            const averageBrightness = totalBrightness / canvas.width;
+            if (averageBrightness < 95) {
+                continue; 
+            }
+
+            const adaptiveThreshold = ((minGray + maxGray) / 2) * sensitivityMultiplier;
+
+            const binaryRow = [];
+            for (let x = 0; x < canvas.width; x++) {
+                binaryRow.push(tempGrayRow[x] < adaptiveThreshold ? 0 : 1);
             }
 
             const trans = [];
@@ -219,7 +276,7 @@ function tick() {
             const avgWidth = sum / widths.length;
 
             if (avgWidth < 3.0) {
-                resetStability(); // Kod Jannersten boyutunda değilse sayacı sıfırla
+                resetStability();
                 return;
             }
 
@@ -228,31 +285,24 @@ function tick() {
                 binaryCode += (widths[i] > avgWidth) ? "1" : "0";
             }
 
-            // --- v7.21 DEĞİŞİKLİĞİ: 1. SEÇENEK KARARLILIK SÜZGECİ MATEMATİĞİ ---
             if (binaryCode === lastDetectedRawCode) {
-                rawCodeMatchCount++; // Kod bir önceki kareyle tıpatıp aynıysa sayacı artır
+                rawCodeMatchCount++;
             } else {
-                lastDetectedRawCode = binaryCode; // Kod milisaniyelik değiştiyse (gölgeyse) yeni kodu al ve sayacı sıfırla
+                lastDetectedRawCode = binaryCode;
                 rawCodeMatchCount = 1;
             }
 
-            // Eğer kod üst üste hedeflenen kare sayısı kadar (5 kare) sabit kalmadıysa onaylama, es geç!
             if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) {
-                debugDiv.innerText = `Sinyal Filtreleniyor... (${rawCodeMatchCount}/${STABILITY_REQUIRED_FRAMES})`;
                 return;
             }
 
-            // Kesintisiz 5 kare kararlılık sağlandıysa artık kartı sözlükte ara
+            const reversedCode = binaryCode.split("").reverse().join("");
+            codeFlatSpan.innerText = binaryCode;
+            codeReverseSpan.innerText = reversedCode;
+
             let foundCard = JANNERSTEN_MAP[binaryCode];
 
             if (foundCard) {
-                if (scannedCardsSet.has(foundCard)) {
-                    resultDiv.innerText = `${foundCard} (Zaten Okundu)`;
-                    resultDiv.style.color = "#ff3b30";
-                    resetStability();
-                    return;
-                }
-
                 resultDiv.innerText = "🎉 " + foundCard;
                 resultDiv.style.color = "#00ffcc";
                 
@@ -278,15 +328,13 @@ function tick() {
                 resultDiv.innerText = "Tanımsız Kart";
                 resultDiv.style.color = "#ff9500";
             }
-            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound} | Kararlı Kod: ${binaryCode}`;
+            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound}`;
         } else {
-            // Ekranda kriterlere uygun hiçbir çizgi yoksa kararlılık sayacını sıfırla
             resetStability();
         }
     }
 }
 
-// Kararlılık hafızasını sıfırlayan yardımcı fonksiyon
 function resetStability() {
     lastDetectedRawCode = "";
     rawCodeMatchCount = 0;
@@ -296,8 +344,10 @@ function resetToWaiting() {
     if (!isSystemLocked) {
         resultDiv.innerText = "Kart Bekleniyor...";
         resultDiv.style.color = "#fff";
+        codeFlatSpan.innerText = "-";
+        codeReverseSpan.innerText = "-";
     }
-    debugDiv.innerText = "Kararlılık Motoru v7.21 Aktif";
+    debugDiv.innerText = "Modüler Kararlı Sürüm v7.32 Aktif";
 }
 
 startCamera(currentFacingMode);
