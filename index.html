@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Canlı Akıllı Tarayıcı v6.4</title>
+    <title>Jannersten Dikey Tarayıcı v6.6</title>
     <style>
         body {
             font-family: sans-serif;
@@ -29,18 +29,19 @@
             width: 100%; 
             height: 100%; 
             object-fit: cover; 
-            /* YENİLİK: Python filtresini donanımsal olarak tarayıcıya uyguluyoruz */
             filter: grayscale(1) contrast(5) brightness(0.9);
         }
+        /* YENİLİK: Çizgiler dik olduğu için kılavuz çizgisini de DİKEY yapıyoruz */
         .guide-line {
             position: absolute;
-            top: 50%;
-            left: 5%;
-            width: 90%;
-            height: 3px;
+            top: 5%;
+            left: 50%;
+            width: 3px;
+            height: 90%;
             background-color: #ff3b30;
-            transform: translateY(-50%);
+            transform: translateX(-50%);
             z-index: 10;
+            box-shadow: 0 0 8px rgba(255, 59, 48, 0.8);
         }
         .result-box {
             margin-top: 10px;
@@ -63,12 +64,12 @@
             min-width: 280px;
             line-height: 1.6;
         }
-        canvas { display: none; }
     </style>
 </head>
 <body>
 
-    <h2>Jannersten Tarayıcı v6.4</h2>
+    <h2>Jannersten Dikey Tarayıcı v6.6</h2>
+    <p>Barkod çizgilerini KIRMIZI DİKEY çizgiye ortalayın.</p>
 
     <div class="container">
         <video id="webcam" autoplay playsinline muted></video>
@@ -78,15 +79,15 @@
     <div class="result-box" id="result">Kart Bekleniyor...</div>
     
     <div class="debug-info" id="debug">
-        Tarama Durumu: Başlatılıyor...<br>
-        Algılanan Geçiş Noktası: -<br>
+        Firefox Modu: Aktif<br>
+        Algılanan Geçiş Noktası: 0<br>
         Okunan Ham Kod: -
     </div>
 
     <canvas id="analyzerCanvas"></canvas>
 
 <script>
-// --- MAÇA 4 HARİTASI ---
+// Maça 4 Kod Haritası
 const JANNERSTEN_MAP = {
     "0101001": "Maça 4 (4 of Spades)",
     "1001010": "Maça 4 (4 of Spades) [Ters]"
@@ -94,17 +95,16 @@ const JANNERSTEN_MAP = {
 
 const video = document.getElementById('webcam');
 const canvas = document.getElementById('analyzerCanvas');
-const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const ctx = canvas.getContext('2d'); // Firefox kısıtlamasını aşmak için sadeleştirildi
 const resultDiv = document.getElementById('result');
 const debugDiv = document.getElementById('debug');
 const guideLine = document.getElementById('guide');
 
 async function initCamera() {
     try {
-        const constraints = {
+        const stream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: "environment", width: 640, height: 480 }
-        };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        });
         video.srcObject = stream;
         video.addEventListener('loadedmetadata', () => {
             canvas.width = 640;
@@ -119,49 +119,49 @@ async function initCamera() {
 
 function tick() {
     if (video.readyState === video.HAVE_CURRENT_DATA) {
-        // CSS filtresi uygulanmış video görüntüsünü canvas'a basıyoruz
-        ctx.filter = "grayscale(1) contrast(5) brightness(0.9)";
+        // FIREFOX ÇÖZÜMÜ: Görüntüyü canvas'a çizerken filtrelenmiş videoyu doğrudan yakala
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        const midY = Math.floor(canvas.height / 2);
+        const midX = Math.floor(canvas.width / 2);
         
-        let bestY = midY;
+        let bestX = midX;
         let maxTransitions = 0;
         let bestTransitionsArray = [];
 
-        // Kırmızı çizginin etrafındaki 60 piksellik alanda dikey tarama (Akıllı Kilitlenme)
-        for (let y = midY - 30; y < midY + 30; y++) {
-            const imgData = ctx.getImageData(0, y, canvas.width, 1).data;
+        // YENİLİK: DİKEY TARAMA MOTORU
+        // Kırmızı dikey çizginin sağındaki ve solundaki 60 piksellik alanda sütun taraması yapar
+        for (let x = midX - 30; x < midX + 30; x++) {
+            // Firefox piksel korumasını delmek için tek satır yerine 1px genişliğinde dikey şerit okuyoruz
+            const imgData = ctx.getImageData(x, 0, 1, canvas.height).data;
             
-            // Hızlı Siyah-Beyaz tespiti
-            const binaryRow = [];
+            const binaryColumn = [];
             for (let i = 0; i < imgData.length; i += 4) {
-                binaryRow.push(imgData[i] < 128 ? 0 : 1); // 0: Siyah, 1: Beyaz
+                const gray = 0.299 * imgData[i] + 0.587 * imgData[i+1] + 0.114 * imgData[i+2];
+                // Firefox'ta CSS filtresi canva'a geçtiği için 128 eşiği artık çalışır
+                binaryColumn.push(gray < 128 ? 0 : 1); 
             }
 
-            // Geçiş noktalarını bul
+            // Dikey geçiş noktalarını bul (Üstten ve alttan %15'lik boşlukları kırp)
             const trans = [];
-            // Sağdan ve soldan %15 kırpıyoruz (Kenar gürültülerini silmek için)
-            const startX = Math.floor(binaryRow.length * 0.15);
-            const endX = Math.floor(binaryRow.length * 0.85);
+            const startY = Math.floor(binaryColumn.length * 0.15);
+            const endY = Math.floor(binaryColumn.length * 0.85);
             
-            for (let i = startX; i < endX; i++) {
-                if (binaryRow[i] !== binaryRow[i+1]) {
+            for (let i = startY; i < endY; i++) {
+                if (binaryColumn[i] !== binaryColumn[i+1]) {
                     trans.push(i);
                 }
             }
 
-            // Jannersten çizgileri için en kararlı geçiş koridoru
             if (trans.length >= 6 && trans.length <= 16) {
                 if (trans.length > maxTransitions) {
                     maxTransitions = trans.length;
-                    bestY = y;
+                    bestX = x;
                     bestTransitionsArray = trans;
                 }
             }
         }
 
-        // Kod Çözme İşlemi
+        // Kod Çözme
         if (bestTransitionsArray.length >= 7) {
             const widths = [];
             for (let i = 0; i < 7; i++) {
@@ -176,11 +176,10 @@ function tick() {
                 binaryCode += (widths[i] > avgWidth) ? "1" : "0";
             }
 
-            // Kart Kontrolü
             let foundCard = JANNERSTEN_MAP[binaryCode];
 
             if (foundCard) {
-                resultDiv.innerText = foundCard;
+                resultDiv.innerText = "🎉 " + foundCard;
                 resultDiv.style.color = "#00ffcc";
                 guideLine.style.backgroundColor = "#00ffcc";
             } else {
@@ -189,7 +188,7 @@ function tick() {
                 guideLine.style.backgroundColor = "#ff9500";
             }
             
-            debugDiv.innerHTML = `Tarama Durumu: <b style="color:#00ffcc">Çizgiler Okunuyor</b><br>` +
+            debugDiv.innerHTML = `Firefox Modu: <b style="color:#00ffcc">Bağlantı Kuruldu!</b><br>` +
                                  `Algılanan Geçiş Noktası: ${bestTransitionsArray.length}<br>` +
                                  `Okunan Ham Kod: <span style="color:#fff; font-weight:bold">${binaryCode}</span>`;
         } else {
@@ -197,7 +196,7 @@ function tick() {
             resultDiv.style.color = "#fff";
             guideLine.style.backgroundColor = "#ff3b30";
             
-            debugDiv.innerHTML = `Tarama Durumu: Kart aranıyor...<br>` +
+            debugDiv.innerHTML = `Firefox Modu: Çizgiler dikey taranıyor...<br>` +
                                  `Algılanan En İyi Geçiş Noktası: ${maxTransitions}<br>` +
                                  `Okunan Ham Kod: -`;
         }
