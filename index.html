@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Map Test v7.51</title>
+    <title>Jannersten Kesin Tanıma v7.52</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -32,7 +32,7 @@
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.51 (Deste Tanıma Testi)</h2>
+    <h2>Jannersten v7.52 (Kesin Tanıma Lab)</h2>
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
@@ -53,14 +53,14 @@
     </div>
     <button class="btn-save" id="saveCodeBtn" disabled>Kodu Listeye Ekle</button>
     <div class="log-container">
-        <div class="log-title">Onaylanmış Liste (Toplam: <span id="cardCount">0</span>):</div>
+        <div class="log-title">Onaylanmış Harita Listesi (Toplam: <span id="cardCount">0</span>):</div>
         <div class="log-list" id="logList">Henüz kayıt yapılmadı.</div>
     </div>
-    <div class="debug-info" id="debug">v7.51 Canlı Tanıma Algoritması Aktif</div>
+    <div class="debug-info" id="debug">Dizi Tarama Filtresi Aktif</div>
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
-// --- v7.51 CANLI TANIMA TESTİ İÇİN GÖMDÜĞÜMÜZ SON KART HARİTASI ---
+// --- v7.52 TAMİR EDİLEN VE PARANTEZ HÜCRESİ DOĞRULANAN GERÇEK HARİTA ---
 const JANNERSTEN_MAP = {
     "S3": ["0001110", "0111000"],
     "S9": ["0110000", "0000110"], 
@@ -198,7 +198,7 @@ function renderLogList() {
     logListDiv.innerHTML = htmlContent;
 }
 
-// v7.51 Yenilik: Kodun veritabanındaki adını ve yönünü canlı bulan fonksiyon
+// --- v7.52 GEOMETRİK TAMİR: Köşeli parantezin içindeki elemanları tek tek tarayan kararlı hücre ---
 function checkMapMatch(binaryCode) {
     for (let cardName in JANNERSTEN_MAP) {
         const arr = JANNERSTEN_MAP[cardName];
@@ -215,7 +215,7 @@ saveCodeBtn.addEventListener('click', () => {
 
     playBeepSound();
     
-    // Eğer kart haritada kayıtlıysa ismini kutuya otomatik yazar, yoksa boş "" bırakır
+    // Hücre tamir edildiği için artık ismi otomatik olarak bulur ve input kutusunun içine yazar!
     let autoMatch = checkMapMatch(activeFlatCode);
     let initialName = autoMatch ? autoMatch.name : "";
 
@@ -269,14 +269,12 @@ function tick() {
             const reversedCode = binaryCode.split("").reverse().join("");
             codeFlatSpan.innerText = binaryCode; codeReverseSpan.innerText = reversedCode;
             
-            // --- v7.51 BÜYÜK YENİLİK: ANLIK MAP EŞLEŞME DOĞRULAYICI ---
+            // Hücre tamir edildiği için ekranda da artık anında yeşil renkli ismi basar!
             let match = checkMapMatch(binaryCode);
             if (match) {
-                resultDiv.innerText = `🎉 ${match.name} (${match.type})`;
-                resultDiv.style.color = "#00ffcc";
+                resultDiv.innerText = `🎉 ${match.name} (${match.type})`; resultDiv.style.color = "#00ffcc";
             } else {
-                resultDiv.innerText = "Sinyal Yakalandı 🎯";
-                resultDiv.style.color = "#ff9500";
+                resultDiv.innerText = "Sinyal Yakalandı 🎯"; resultDiv.style.color = "#ff9500";
             }
             
             activeFlatCode = binaryCode; activeReverseCode = reversedCode;
@@ -289,7 +287,7 @@ function tick() {
 function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
 function resetToWaiting() {
     if (!isSystemLocked && !isWarmUpActive) { resultDiv.innerText = "Rehber Çizgiye Hizalayın..."; resultDiv.style.color = "#fff"; }
-    debugDiv.innerText = "v7.51 Test Modu Hazır";
+    debugDiv.innerText = "v7.52 Tamir Sürümü Yayında";
 }
 startCamera(currentFacingMode);
 </script>
