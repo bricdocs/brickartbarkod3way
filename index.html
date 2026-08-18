@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Modüler Sistem v7.30</title>
+    <title>Jannersten Kesin Koruma v7.31</title>
     
-    <!-- EN KRİTİK BAĞLANTI: Dışarıdaki kart verilerini HTML'e bağlayan köprü -->
+    <!-- Kart veritabanı dosyanız aynen bağlı kalıyor -->
     <script src="barkod-data.js"></script>
     
     <style>
@@ -83,7 +83,7 @@
 </head>
 <body>
 
-    <h2>Jannersten v7.30 (Modüler Veri)</h2>
+    <h2>Jannersten v7.31 (Yoğunluk Korumalı)</h2>
     
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
@@ -113,7 +113,7 @@
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
 
-    <div class="debug-info" id="debug">Modüler Motor Aktif</div>
+    <div class="debug-info" id="debug">Koruma Motoru Aktif</div>
 
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
@@ -218,6 +218,7 @@ function tick() {
         for (let y = 40; y < 270; y += 2) {
             let minGray = 255;
             let maxGray = 0;
+            let totalBrightness = 0; // v7.31 Yenilik: Satır aydınlık takibi
             const tempGrayRow = [];
 
             for (let x = 0; x < canvas.width; x++) {
@@ -228,8 +229,17 @@ function tick() {
                 const gray = 0.299 * r + 0.587 * g + 0.114 * b;
                 
                 tempGrayRow.push(gray);
+                totalBrightness += gray;
+                
                 if (gray < minGray) minGray = gray;
                 if (gray > maxGray) maxGray = gray;
+            }
+
+            // v7.31 YENİLİK: BEYAZLIK YOĞUNLUK TESTİ (HAYALET ENGELLEYİCİ SÜZGEÇ)
+            // Eğer taranan satırın ortalama parlaklığı çok düşükse (oda gölgesiyse), bu satırı direkt çöpe at.
+            const averageBrightness = totalBrightness / canvas.width;
+            if (averageBrightness < 95) {
+                continue; // Gölgeler burada tamamen elenir, kart zemin beyazlığı şart koşulur.
             }
 
             const adaptiveThreshold = ((minGray + maxGray) / 2) * sensitivityMultiplier;
@@ -292,7 +302,6 @@ function tick() {
             codeFlatSpan.innerText = binaryCode;
             codeReverseSpan.innerText = reversedCode;
 
-            // Dışarıdaki barkod-data.js dosyasından eşleşen kartı arar
             let foundCard = JANNERSTEN_MAP[binaryCode];
 
             if (foundCard) {
@@ -340,7 +349,7 @@ function resetToWaiting() {
         codeFlatSpan.innerText = "-";
         codeReverseSpan.innerText = "-";
     }
-    debugDiv.innerText = "Kararlı Sürüm v7.30 Aktif";
+    debugDiv.innerText = "Yoğunluk Süzgeçli Sürüm v7.31 Aktif";
 }
 
 startCamera(currentFacingMode);
