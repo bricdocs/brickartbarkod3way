@@ -3,16 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Tam Ekran Tarayıcı v7.17</title>
+    <title>Jannersten Orijinal v7.18</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
         
         .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
-        video { display: none; } 
-        #displayCanvas { width: 100%; height: 100%; object-fit: cover; background: #000; }
         
-        /* DAR TÜNEL VE ÇİZGİLER KALDIRILDI - TÜM EKRAN TARAMA ALANIDIR */
+        /* v7.12'nin O KUSURSUZ SIYAH BEYAZ CSS FILTRESI GERI GELDI */
+        video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+            filter: grayscale(1) contrast(5) brightness(0.9); 
+        }
+        
+        .guide-line { 
+            position: absolute; 
+            top: 50%; 
+            left: 0; 
+            width: 100%; 
+            height: 60px; /* Rahat hizalamanız için 60 piksellik koridor alanı */
+            background: rgba(0, 255, 204, 0.05); 
+            border-top: 2px dashed #00ffcc;
+            border-bottom: 2px dashed #00ffcc;
+            transform: translateY(-50%); 
+            z-index: 10; 
+        }
         
         .control-panel { display: flex; justify-content: center; gap: 10px; margin: 10px auto; max-width: 400px; }
         button { padding: 10px 15px; border: none; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; }
@@ -26,14 +43,14 @@
         
         .log-container { margin: 10px auto; max-width: 350px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; text-align: left; }
         .log-title { font-size: 12px; color: #00ffcc; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 3px; }
-        .log-list { font-family: monospace; font-size: 14px; color: #fff; max-height: 125px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .log-list { font-family: monospace; font-size: 14px; color: #fff; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
 
         .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #888; text-align: center; }
     </style>
 </head>
 <body>
 
-    <h2>Jannersten v7.17 (Tam Ekran Tarama)</h2>
+    <h2>Jannersten v7.18 (v7.12 Tabanlı)</h2>
     
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
@@ -41,13 +58,13 @@
     </div>
 
     <div class="slider-box">
-        <label for="threshSlider">Işık Filtre Ayarı: <span id="threshVal">110</span></label><br>
-        <input type="range" id="threshSlider" min="60" max="160" value="110">
+        <label for="threshSlider">Işık Dengesi Ayarı: <span id="threshVal">115</span></label><br>
+        <input type="range" id="threshSlider" min="60" max="170" value="115">
     </div>
 
     <div class="container">
         <video id="webcam" autoplay playsinline muted></video>
-        <canvas id="displayCanvas"></canvas>
+        <div class="guide-line"></div>
     </div>
 
     <div class="result-box" id="result">Kart Bekleniyor...</div>
@@ -57,7 +74,9 @@
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
 
-    <div class="debug-info" id="debug">Tam Ekran Algılama Ağı: Aktif</div>
+    <div class="debug-info" id="debug">v7.12 Hafif Motoru Aktif</div>
+
+    <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
 const JANNERSTEN_MAP = {
@@ -68,8 +87,8 @@ const JANNERSTEN_MAP = {
 };
 
 const video = document.getElementById('webcam');
-const displayCanvas = document.getElementById('displayCanvas');
-const ctx = displayCanvas.getContext('2d');
+const canvas = document.getElementById('analyzerCanvas');
+const ctx = canvas.getContext('2d');
 const resultDiv = document.getElementById('result');
 const debugDiv = document.getElementById('debug');
 const logListDiv = document.getElementById('logList');
@@ -79,21 +98,17 @@ const clearLogBtn = document.getElementById('clearLogBtn');
 const threshSlider = document.getElementById('threshSlider');
 const threshValSpan = document.getElementById('threshVal');
 
-displayCanvas.width = 640;
-displayCanvas.height = 480;
+canvas.width = 640;
+canvas.height = 480;
 
 let currentStream = null;
 let currentFacingMode = "environment"; 
-let globalThreshold = 110;
-let isRunning = false;
+let globalThreshold = 115;
+let tickInterval = null;
 
 let scannedCardsSet = new Set(); 
 let isSystemLocked = false;       
 let consecutiveEmptyFrames = 0;   
-
-let lastScannedRawCode = "";      
-let rawCodeMatchCount = 0;        
-const STABILITY_REQUIRED_FRAMES = 5; 
 
 threshSlider.addEventListener('input', (e) => {
     globalThreshold = parseInt(e.target.value);
@@ -117,7 +132,7 @@ function playBeepSound() {
 
 async function startCamera(facingMode) {
     if (currentStream) currentStream.getTracks().forEach(track => track.stop());
-    isRunning = false;
+    if (tickInterval) clearInterval(tickInterval);
 
     try {
         currentStream = await navigator.mediaDevices.getUserMedia({
@@ -125,10 +140,10 @@ async function startCamera(facingMode) {
         });
         video.srcObject = currentStream;
         
+        // v7.12'nin o tıkır tıkır çalışan Force-Start zamanlayıcısı geri geldi
         setTimeout(() => {
-            isRunning = true;
-            requestAnimationFrame(loop);
-        }, 1000);
+            tickInterval = setInterval(tick, 1000 / 30);
+        }, 1200);
     } catch (err) {
         resultDiv.innerText = "Kamera Başlatılamadı!";
     }
@@ -146,35 +161,27 @@ clearLogBtn.addEventListener('click', () => {
     logListDiv.style.color = "#888";
     isSystemLocked = false;
     consecutiveEmptyFrames = 0;
-    lastScannedRawCode = "";
-    rawCodeMatchCount = 0;
     resetToWaiting();
 });
 
-function loop() {
-    if (!isRunning) return;
-    tick();
-    requestAnimationFrame(loop);
-}
-
 function tick() {
     if (video.readyState >= 2) {
-        ctx.drawImage(video, 0, 0, displayCanvas.width, displayCanvas.height);
+        // v7.12'deki gibi videoyu canvasa doğrudan, işlemciyi yormadan aktarıyoruz
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        const fullFrame = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
+        const midY = 240;
+        const fullFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = fullFrame.data;
 
         let maxTransitions = 0;
         let bestTransitionsArray = [];
-        let bestYFound = 240;
+        let bestYFound = midY;
 
-        // --- v7.17 DEV DEĞİŞİKLİK: TAM EKRAN TARAMA AĞI (FULL-FRAME CORRIDOR) ---
-        // Ekranın üst sınırından (80) alt sınırına (400) kadar olan tüm dikey alanı 
-        // 4'er piksel tarayarak dev bir ağ örüyoruz. Kart nerede olursa olsun yakalanır!
-        for (let y = 80; y < 400; y += 4) {
+        // Genişletilmiş ve esnek 60 piksellik koridor alanı (Hizalamayı kolaylaştırmak için)
+        for (let y = midY - 30; y < midY + 30; y += 2) {
             const binaryRow = [];
-            for (let x = 0; x < displayCanvas.width; x++) {
-                const pixelIndex = (y * displayCanvas.width + x) * 4;
+            for (let x = 0; x < canvas.width; x++) {
+                const pixelIndex = (y * canvas.width + x) * 4;
                 const r = data[pixelIndex];
                 const g = data[pixelIndex + 1];
                 const b = data[pixelIndex + 2];
@@ -183,8 +190,8 @@ function tick() {
             }
 
             const trans = [];
-            const startX = Math.floor(displayCanvas.width * 0.20);
-            const endX = Math.floor(displayCanvas.width * 0.80);
+            const startX = Math.floor(canvas.width * 0.15);
+            const endX = Math.floor(canvas.width * 0.85);
             
             for (let i = startX; i < endX; i++) {
                 if (binaryRow[i] !== binaryRow[i+1]) trans.push(i);
@@ -199,23 +206,17 @@ function tick() {
             }
         }
 
-        // Ekranı yapay siyah-beyaz boyama motoru
-        for (let i = 0; i < data.length; i += 4) {
-            const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
-            const bw = gray < globalThreshold ? 0 : 255;
-            data[i] = bw; data[i+1] = bw; data[i+2] = bw;
-        }
-        ctx.putImageData(fullFrame, 0, 0);
-
-        // Kararlılık Kontrol Aşaması
+        // Sonuçları İşleme Süzgeci
         if (bestTransitionsArray.length >= 7) {
+            
             const widths = [];
             for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
 
             const sum = widths.reduce((a, b) => a + b, 0);
             const avgWidth = sum / widths.length;
 
-            if (avgWidth < 4.0 || avgWidth > 25) {
+            // Küçücük gölge parazitlerini elleyen kalınlık süzgeci
+            if (avgWidth < 3.0) {
                 handleEmptyFrame();
                 return;
             }
@@ -231,19 +232,6 @@ function tick() {
             let binaryCode = "";
             for (let i = 0; i < widths.length; i++) {
                 binaryCode += (widths[i] > avgWidth) ? "1" : "0";
-            }
-
-            // Ardışık Kare Kararlılık Filtresi (5 Kare)
-            if (binaryCode === lastScannedRawCode) {
-                rawCodeMatchCount++;
-            } else {
-                lastScannedRawCode = binaryCode;
-                rawCodeMatchCount = 1;
-            }
-
-            if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) {
-                debugDiv.innerText = `Sinyal Analiz Ediliyor... (${rawCodeMatchCount}/${STABILITY_REQUIRED_FRAMES})`;
-                return;
             }
 
             let foundCard = JANNERSTEN_MAP[binaryCode];
@@ -271,7 +259,7 @@ function tick() {
                 resultDiv.innerText = "Tanımsız Kart";
                 resultDiv.style.color = "#ff9500";
             }
-            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır (Y): ${bestYFound} | Kod: ${binaryCode}`;
+            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound} | Kod: ${binaryCode}`;
         } else {
             handleEmptyFrame();
         }
@@ -280,10 +268,8 @@ function tick() {
 
 function handleEmptyFrame() {
     consecutiveEmptyFrames++;
-    if (consecutiveEmptyFrames > 8) {
+    if (consecutiveEmptyFrames > 12) {
         isSystemLocked = false; 
-        lastScannedRawCode = "";
-        rawCodeMatchCount = 0;
         resetToWaiting();
     }
 }
@@ -293,7 +279,7 @@ function resetToWaiting() {
         resultDiv.innerText = "Kart Bekleniyor...";
         resultDiv.style.color = "#fff";
     }
-    debugDiv.innerText = "Tam Ekran Ağı Aktif | Kör Tarama Devrede";
+    debugDiv.innerText = "Hafif Motor v7.12 Çekirdeği Aktif";
 }
 
 startCamera(currentFacingMode);
