@@ -3,25 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Lab v7.47</title>
+    <title>Jannersten Harita Fabrikası v7.48</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
         .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
         video { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(5) brightness(0.9); }
-        
-        /* v7.47 Düzenleme: Görsel turkuaz rehber çizgi tam %50 orta aksa kilitlendi */
-        .guide-line { 
-            position: absolute; 
-            top: 50%; 
-            left: 0; 
-            width: 100%; 
-            height: 0; 
-            border-top: 2px dashed #00ffcc; 
-            box-shadow: 0 0 8px rgba(0, 255, 204, 0.5);
-            z-index: 10; 
-        }
-        
+        .guide-line { position: absolute; top: 50%; left: 0; width: 100%; height: 0; border-top: 2px dashed #00ffcc; box-shadow: 0 0 8px rgba(0, 255, 204, 0.5); z-index: 10; }
         .control-panel { display: flex; justify-content: center; gap: 10px; margin: 10px auto; max-width: 400px; }
         button { padding: 10px 15px; border: none; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; }
         .btn-cam { background: #00ffcc; color: #000; }
@@ -34,12 +22,16 @@
         .code-label { font-size: 13px; color: #888; display: block; margin-top: 5px; }
         .log-container { margin: 10px auto; max-width: 350px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; text-align: left; }
         .log-title { font-size: 12px; color: #00ffcc; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 3px; }
-        .log-list { font-family: monospace; font-size: 12px; color: #fff; max-height: 140px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; line-height: 1.5; }
+        
+        /* v7.48 Düzenleme: Kodların kopyalanmasını kolaylaştırmak için daha büyük, monospace ve seçilebilir satırlar yapıldı */
+        .log-list { font-family: 'Courier New', Courier, monospace; font-size: 14px; color: #fff; max-height: 160px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; line-height: 1.8; }
+        .log-item { user-select: all; -webkit-user-select: all; background: #111; padding: 4px 8px; border-radius: 4px; margin-bottom: 4px; border: 1px solid #222; display: block; }
+        
         .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #555; text-align: center; }
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.47 (Gerçek Orta Hat Lab)</h2>
+    <h2>Jannersten v7.48 (Harita Fabrikası)</h2>
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
@@ -59,26 +51,26 @@
         <div>Ters: <span class="code-row" id="codeReverse">-</span></div>
     </div>
     <div class="log-container">
-        <div class="log-title">Teşhis Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
+        <div class="log-title">Hazır Kod Satırları (Toplam: <span id="cardCount">0</span>):</div>
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
-    <div class="debug-info" id="debug">Tam Orta Aks Y: 240 Kilitlemesi Aktif</div>
+    <div class="debug-info" id="debug">Y: 240 Kod Üretim İstasyonu Aktif</div>
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
-    <script>
+<script>
 const JANNERSTEN_MAP = {
-    // --- MAÇA SERİSİ (Spades - S) ---
-    "S3": ["0001110", "0111000"], "S4": ["0101001", "1001010"], "S5": ["0101100", "0011010"],
-    "S6": ["0011100", "0011100"], "S9": ["0110000", "0000110"],
-    // --- SİNEK SERİSİ (Clubs - C) ---
-    "C10": ["0100111", "1110010"], "C8": ["0100110", "0110010"], "C6": ["0011011", "1101100"], "C5": ["0111110", "0111110"], 
-    // --- KARO SERİSİ (Diamonds - D) ---
-    "HA": ["0101010", "0101010"], "DK": ["0101010", "0101010"], "D10": ["0101000", "0001010"], 
-    "D9": ["0010100", "0010100"], "D8": ["0110010", "0100110"], "D7": ["0100010", "0100010"], 
-    "D6": ["0010000", "0000100"], "D4": ["0101110", "0111010"], "D3": ["1111001", "1001111"],
-    // --- KUPA SERİSİ (Hearts - H) ---
-    "HK": ["0000101", "1010000"], "HQ": ["0000011", "1100000"], "H9": ["0111100", "0011110"], 
-    "HT": ["0100001", "1000010"], "H5": ["0001111", "1111000"], "H3": ["0110000", "0000110"]  
+    // // --- MAÇA SERİSİ (Spades - S) ---
+    // "S3": ["0001110", "0111000"], "S4": ["0101001", "1001010"], "S5": ["0101100", "0011010"],
+    // "S6": ["0011100", "0011100"], "S9": ["0110000", "0000110"],
+    // // --- SİNEK SERİSİ (Clubs - C) ---
+    // "C10": ["0100111", "1110010"], "C8": ["0100110", "0110010"], "C6": ["0011011", "1101100"], "C5": ["0111110", "0111110"], 
+    // // --- KARO SERİSİ (Diamonds - D) ---
+    // "HA": ["0101010", "0101010"], "DK": ["0101010", "0101010"], "D10": ["0101000", "0001010"], 
+    // "D9": ["0010100", "0010100"], "D8": ["0110010", "0100110"], "D7": ["0100010", "0100010"], 
+    // "D6": ["0010000", "0000100"], "D4": ["0101110", "0111010"], "D3": ["1111001", "1001111"],
+    // // --- KUPA SERİSİ (Hearts - H) ---
+    // "HK": ["0000101", "1010000"], "HQ": ["0000011", "1100000"], "H9": ["0111100", "0011110"], 
+    // "HT": ["0100001", "1000010"], "H5": ["0001111", "1111000"], "H3": ["0110000", "0000110"]  
 };
 
 const video = document.getElementById('webcam');
@@ -153,7 +145,6 @@ clearLogBtn.addEventListener('click', () => {
 
 function calculateOtsuThreshold(data, width, height) {
     let histogram = new Array(256).fill(0); let totalPixels = 0;
-    // v7.47 Düzenleme: Işık havuzu tam orta hattı (220-260 arasını) kapsayacak şekilde merkeze alındı
     for (let y = 220; y < 260; y++) {
         for (let x = 0; x < width; x++) {
             const idx = (y * width + x) * 4;
@@ -174,12 +165,12 @@ function calculateOtsuThreshold(data, width, height) {
     return threshold;
 }
 </script>
+
 <script>
-function findMapDetailsForCode(binaryCode) {
+function findMapNameByCode(binaryCode) {
     for (let cardName in JANNERSTEN_MAP) {
         const arr = JANNERSTEN_MAP[cardName];
-        if (arr[0] === binaryCode) return { name: cardName, type: "Düz", dataCode: arr[0] };
-        if (arr[1] === binaryCode) return { name: cardName, type: "Ters", dataCode: arr[0] };
+        if (arr[0] === binaryCode || arr[1] === binaryCode) return cardName;
     }
     return null;
 }
@@ -193,8 +184,6 @@ function tick() {
         const globalThreshold = calculateOtsuThreshold(data, canvas.width, canvas.height) * otsuMultiplier;
         
         let bestTransitionsArray = []; 
-        
-        // --- v7.47 KESİN DÜZELTME: Tarama satırı tam orta koordinat olan Y: 240 aksına çekildi ---
         const y = 240; 
         const binaryRow = [];
         for (let x = 0; x < canvas.width; x++) {
@@ -205,9 +194,7 @@ function tick() {
         
         const trans = []; const startX = Math.floor(canvas.width * 0.15); const endX = Math.floor(canvas.width * 0.85);
         for (let i = startX; i < endX; i++) { if (binaryRow[i] !== binaryRow[i+1]) trans.push(i); }
-        if (trans.length >= 7 && trans.length <= 15) {
-            bestTransitionsArray = trans;
-        }
+        if (trans.length >= 7 && trans.length <= 15) { bestTransitionsArray = trans; }
 
         if (bestTransitionsArray.length >= 7) {
             if (isSystemLocked) return;
@@ -222,40 +209,41 @@ function tick() {
             let binaryCode = "";
             for (let i = 0; i < widths.length; i++) binaryCode += (widths[i] > avgWidth) ? "1" : "0";
 
-            if (binaryCode === lastDetectedRawCode) { 
-                rawCodeMatchCount++; 
-            } else { 
-                lastDetectedRawCode = binaryCode; 
-                rawCodeMatchCount = 1; 
-            }
+            if (binaryCode === lastDetectedRawCode) { rawCodeMatchCount++; } 
+            else { lastDetectedRawCode = binaryCode; rawCodeMatchCount = 1; }
 
             if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) return;
 
             const reversedCode = binaryCode.split("").reverse().join("");
             codeFlatSpan.innerText = binaryCode; codeReverseSpan.innerText = reversedCode;
-            let match = findMapDetailsForCode(binaryCode);
+            
+            let knownName = findMapNameByCode(binaryCode);
+            
+            // --- v7.48 BÜYÜK YENİLİK: TIRNAKLI KOD FABRİKASI ALGORİTMASI ---
+            // Eğer kart tanınıyorsa adını yazar, tanınmıyorsa boş çift tırnak "" bırakır.
+            const mapHeader = knownName ? `"${knownName}"` : `""`;
+            const readyLogLine = `<div class="log-item">${mapHeader}: ["${binaryCode}", "${reversedCode}"],</div>`;
 
-            if (match) {
-                if (scannedCardsSet.has(match.name)) {
-                    resultDiv.innerText = `${match.name} (Zaten Okundu)`; resultDiv.style.color = "#ff3b30"; resetStability(); return;
-                }
-                resultDiv.innerText = "🎉 " + match.name; resultDiv.style.color = "#00ffcc"; playBeepSound();
-                scannedCardsSet.add(match.name); cardCountSpan.innerText = scannedCardsSet.size;
-                const logLine = `<b>${match.name}</b> (${match.type}) | Data: <span style="color:#00ffcc">${match.dataCode}</span> | Canlı: <span style="color:#ff9500">${binaryCode}</span>`;
-                cardLogArray.push(logLine);
-                logListDiv.innerHTML = cardLogArray.slice().reverse().map((line, idx) => `[${cardLogArray.length - idx}] ${line}`).join("<br>");
+            // Aynı kodun arka arkaya listeye sızmasını engelleyen benzersiz kilit dizisi
+            if (cardLogArray.length === 0 || !cardLogArray[cardLogArray.length - 1].includes(`"${binaryCode}"`)) {
+                playBeepSound();
+                cardLogArray.push(readyLogLine);
+                cardCountSpan.innerText = cardLogArray.length;
+                logListDiv.innerHTML = cardLogArray.slice().reverse().join("");
                 logListDiv.style.color = "#fff";
-                isSystemLocked = true; resultDiv.innerText = "Lütfen Kartı Değiştirin..."; resultDiv.style.color = "#ff9500";
+                
+                isSystemLocked = true;
+                resultDiv.innerText = "Lütfen Kartı Değiştirin...";
+                resultDiv.style.color = "#ff9500";
                 setTimeout(() => { isSystemLocked = false; resetStability(); resetToWaiting(); }, 1500);
-            } else { resultDiv.innerText = "Tanımsız Kart"; resultDiv.style.color = "#ff9500"; }
-            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Sabit Satır: ${y}`;
+            }
         } else { resetStability(); }
     }
 }
 function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
 function resetToWaiting() {
     if (!isSystemLocked && !isWarmUpActive) { resultDiv.innerText = "Rehber Çizgiye Hizalayın..."; resultDiv.style.color = "#fff"; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; }
-    debugDiv.innerText = "v7.47 Merkez Aks Hazır";
+    debugDiv.innerText = "v7.48 Kod Üretici Hazır";
 }
 startCamera(currentFacingMode);
 </script>
