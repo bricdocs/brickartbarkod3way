@@ -3,47 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Canlı Akıllı Tarayıcı v6.2</title>
+    <title>Jannersten Akıllı Tarayıcı v6.3</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
             background-color: #1a1a1a;
             color: #ffffff;
             margin: 0;
-            padding: 15px;
-            overflow-x: hidden;
+            padding: 10px;
         }
-        h2 {
-            margin: 5px 0;
-            font-size: 22px;
-            color: #00ffcc;
-        }
-        p {
-            margin: 5px 0 15px 0;
-            font-size: 14px;
-            color: #aaaaaa;
-            text-align: center;
-        }
+        h2 { margin: 5px 0; font-size: 20px; color: #00ffcc; }
         .container {
             position: relative;
             width: 100%;
-            max-width: 480px;
+            max-width: 440px;
             aspect-ratio: 4 / 3;
-            border: 3px solid #333;
-            border-radius: 12px;
+            border: 2px solid #333;
+            border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
         }
-        video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            background: #000;
-        }
-        /* Ekranın ortasındaki dinamik tarama kılavuz çizgisi */
+        video { width: 100%; height: 100%; object-fit: cover; }
         .guide-line {
             position: absolute;
             top: 50%;
@@ -53,44 +35,44 @@
             background-color: #ff3b30;
             transform: translateY(-50%);
             z-index: 10;
-            box-shadow: 0 0 8px rgba(255, 59, 48, 0.8);
-            transition: background-color 0.2s, box-shadow 0.2s;
         }
         .result-box {
-            margin-top: 15px;
-            padding: 15px;
+            margin-top: 10px;
+            padding: 12px;
             background: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            font-size: 24px;
+            border-radius: 8px;
+            font-size: 22px;
             font-weight: bold;
-            color: #ffffff;
             text-align: center;
             min-width: 280px;
-            letter-spacing: 1px;
         }
         .debug-info {
-            margin-top: 15px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 13px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 12px;
             color: #00ffcc;
-            background: #000000;
-            padding: 12px;
+            background: #000;
+            padding: 10px;
             border-radius: 6px;
-            border: 1px solid #333;
             min-width: 280px;
-            line-height: 1.5;
         }
-        canvas {
-            display: none; /* Analiz arka planda gizli canvas ile yapılır */
+        /* YENİLİK: Canlı Siyah Beyaz Gözetleme Penceresi */
+        .preview-box {
+            margin-top: 10px;
+            text-align: center;
+        }
+        #analyzerCanvas {
+            display: block;
+            width: 100%;
+            max-width: 200px;
+            border: 1px solid #555;
+            background: #000;
         }
     </style>
 </head>
 <body>
 
-    <h2>Jannersten Tarayıcı v6.2</h2>
-    <p>Kartın barkodunu ekrandaki KIRMIZI çizgiye ortalayın.</p>
+    <h2>Jannersten Tarayıcı v6.3</h2>
 
     <div class="container">
         <video id="webcam" autoplay playsinline muted></video>
@@ -100,18 +82,21 @@
     <div class="result-box" id="result">Kart Bekleniyor...</div>
     
     <div class="debug-info" id="debug">
-        Okunan Kod: - <br>
-        Tarama Satırı (Y): Analiz Bekleniyor...<br>
-        Bulunan Çizgi Sayısı: -
+        Tarama Durumu: Başlatılıyor...<br>
+        Algılanan Geçiş Sayısı: 0<br>
+        Okunan Ham Kod: -
     </div>
 
-    <canvas id="analyzerCanvas"></canvas>
+    <!-- Hata Ayıklama İçin Canlı Önizleme Alanı -->
+    <div class="preview-box">
+        <div>Yazılımın Gördüğü Filtre (Debug):</div>
+        <canvas id="analyzerCanvas"></canvas>
+    </div>
 
 <script>
-// --- V6.2 GELİŞMİŞ BARKOD EŞLEŞTİRME HARİTASI (MAP) ---
 const JANNERSTEN_MAP = {
     "0101001": "Maça 4 (4 of Spades)",
-    "1001010": "Maça 4 (4 of Spades) [Ters Tutuş]" // 180 derece ters tutma toleransı
+    "1001010": "Maça 4 (4 of Spades) [Ters]"
 };
 
 const video = document.getElementById('webcam');
@@ -121,126 +106,127 @@ const resultDiv = document.getElementById('result');
 const debugDiv = document.getElementById('debug');
 const guideLine = document.getElementById('guide');
 
-// Kamerayı Yüksek Çözünürlük ve Doğru Odakla Başlat
 async function initCamera() {
     try {
         const constraints = {
-            video: {
-                facingMode: "environment",
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                // Mobil cihazlarda odaklanmayı en net düzeye getirmek için
-                focusMode: "continuous"
-            }
+            video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }
         };
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
         video.addEventListener('loadedmetadata', () => {
+            // Tuhaflıkları engellemek için canvas boyutunu kameraya eşitliyoruz
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            tick(); // Canlı analiz döngüsünü ateşle
+            tick();
         });
     } catch (err) {
-        resultDiv.innerText = "Kamera Başlatılamadı!";
-        resultDiv.style.color = "#ff3b30";
-        console.error("Kamera Hatası:", err);
+        resultDiv.innerText = "Kamera İzni Eksik!";
+        console.error(err);
     }
 }
 
-// v6.2 Kesintisiz Tarama ve Karar Döngüsü
 function tick() {
     if (video.readyState === video.HAVE_CURRENT_DATA) {
-        // Canlı kameradan anlık kareyi arka plan hafızasına (canvas) aktar
+        // Kamerayı canvasa çiz
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Canvas görüntüsünü manipüle etmek için tamamını alalım (Görsel debug için)
+        const fullImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = fullImageData.data;
         
         const midY = Math.floor(canvas.height / 2);
         
-        let bestY = midY;
+        // Hata tespiti için istatistik tutalım
         let maxTransitions = 0;
+        let bestY = midY;
         let bestTransitionsArray = [];
 
-        // --- YENİLİK 1: PYTHON'DAKİ DİNAMİK Y-EKSENİ TARAMASI ---
-        // Çizgilerin erimediği en net orta gövdeyi bulmak için geniş bir koridor taranır
-        const scanRadius = Math.floor(canvas.height * 0.15); // Dinamik yükseklik ayarı
-        
-        for (let y = midY - scanRadius; y < midY + scanRadius; y++) {
-            if (y < 0 || y >= canvas.height) continue;
+        // Önce tüm görseli siyah beyaza çevirip debug ekranına basalım (Kullanıcı görsün diye)
+        for (let y = 0; y < canvas.height; y++) {
+            const rowStartIndex = y * canvas.width * 4;
             
-            const rowData = ctx.getImageData(0, y, canvas.width, 1).data;
-            const binaryRow = applyAdaptiveContrastThreshold(rowData);
-            const currentTransitions = getTransitions(binaryRow);
+            // Satır piksellerini topla
+            const rowRGBA = [];
+            for (let x = 0; x < canvas.width; x++) {
+                const idx = rowStartIndex + (x * 4);
+                rowRGBA.push(data[idx], data[idx+1], data[idx+2], data[idx+3]);
+            }
             
-            // Jannersten standartlarında 7 çizgi tam 7 veya 8 geçiş noktası üretir
-            // Çevre parazit toleransını artırmak için aralığı 6-16 yapıyoruz
-            if (currentTransitions.length >= 6 && currentTransitions.length <= 16) {
-                if (currentTransitions.length > maxTransitions) {
-                    maxTransitions = currentTransitions.length;
-                    bestY = y;
-                    bestTransitionsArray = currentTransitions;
+            const binaryRow = applyAdaptiveContrastThreshold(rowRGBA);
+            
+            // Debug için canvas görüntüsünü siyah-beyaz yapıyoruz
+            for (let x = 0; x < canvas.width; x++) {
+                const idx = rowStartIndex + (x * 4);
+                const color = binaryRow[x] === 1 ? 255 : 0;
+                data[idx] = color;     // R
+                data[idx+1] = color;   // G
+                data[idx+2] = color;   // B
+            }
+
+            // Sadece kırmızı çizginin yakınındaki koridorda (Y ekseni) Jannersten çizgisi ara
+            if (y > midY - 80 && y < midY + 80) {
+                const currentTransitions = getTransitions(binaryRow);
+                if (currentTransitions.length >= 6 && currentTransitions.length <= 18) {
+                    if (currentTransitions.length > maxTransitions) {
+                        maxTransitions = currentTransitions.length;
+                        bestY = y;
+                        bestTransitionsArray = currentTransitions;
+                    }
                 }
             }
         }
+        
+        // Siyah beyaz güncellenmiş görüntüyü debug ekranına bas
+        ctx.putImageData(fullImageData, 0, 0);
 
-        // --- YENİLİK 2: DETAYLI BARKOD MATEMATİĞİ VE ANALİZİ ---
+        // Kod çözme adımı
         if (bestTransitionsArray.length >= 7) {
-            // Siyah/Beyaz blokların piksel genişliklerini diziye doldur
             const widths = [];
             for (let i = 0; i < 7; i++) {
                 widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
             }
 
-            // Python ile birebir eşleşen Dinamik Oranlama Eşiği
             const sum = widths.reduce((a, b) => a + b, 0);
             const avgWidth = sum / widths.length;
 
-            // Genişlikler ortalamadan büyükse 1 (Geniş), küçükse 0 (Dar) bit dizisine çevrilir
             let binaryCode = "";
             for (let i = 0; i < widths.length; i++) {
                 binaryCode += (widths[i] > avgWidth) ? "1" : "0";
             }
 
-            // Sözlükte (Map) tarama yap
             let foundCard = JANNERSTEN_MAP[binaryCode];
 
             if (foundCard) {
                 resultDiv.innerText = foundCard;
                 resultDiv.style.color = "#00ffcc";
                 guideLine.style.backgroundColor = "#00ffcc";
-                guideLine.style.boxShadow = "0 0 12px rgba(0, 255, 204, 0.9)";
             } else {
                 resultDiv.innerText = "Tanımsız Kart";
                 resultDiv.style.color = "#ff9500";
                 guideLine.style.backgroundColor = "#ff9500";
-                guideLine.style.boxShadow = "0 0 12px rgba(255, 149, 0, 0.9)";
             }
             
-            // Gerçek zamanlı debug paneli güncellemesi
-            debugDiv.innerHTML = `Okunan Kod: <b style="color:#fff;">${binaryCode}</b><br>` +
-                                 `Tarama Satırı (Y): ${bestY}. piksel<br>` +
-                                 `Bulunan Çizgi Sayısı: ${Math.floor(bestTransitionsArray.length / 2)}`;
-
+            debugDiv.innerHTML = `Tarama Durumu: <b>Çizgi Kilitlendi!</b><br>` +
+                                 `Algılanan Geçiş Sayısı: ${bestTransitionsArray.length}<br>` +
+                                 `Okunan Ham Kod: <span style='color:#fff'>${binaryCode}</span> (Y:${bestY})`;
         } else {
-            // Ekranda kart yoksa bekleme moduna dön
             resultDiv.innerText = "Kart Bekleniyor...";
-            resultDiv.style.color = "#ffffff";
+            resultDiv.style.color = "#fff";
             guideLine.style.backgroundColor = "#ff3b30";
-            guideLine.style.boxShadow = "0 0 8px rgba(255, 59, 48, 0.8)";
-            debugDiv.innerHTML = `Okunan Kod: - <br>` +
-                                 `Tarama Satırı (Y): Çizgi Aranıyor...<br>` +
-                                 `Bulunan Çizgi Sayısı: 0`;
+            
+            debugDiv.innerHTML = `Tarama Durumu: Satırlar taranıyor...<br>` +
+                                 `Algılanan En İyi Geçiş Sayısı: ${maxTransitions}<br>` +
+                                 `Okunan Ham Kod: -`;
         }
     }
-    // Mobil performansı için tarayıcının en optimize kare yenileme hızına bağlan
     requestAnimationFrame(tick);
 }
 
-// v6.2 Yerel Kontrast Filtresi (Çizgilerin yapışmasını engeller)
 function applyAdaptiveContrastThreshold(rgbaData) {
     const grayPixels = [];
     let minGray = 255;
     let maxGray = 0;
 
-    // Satırdaki pikselleri analiz edip ışık sınırlarını bulur
     for (let i = 0; i < rgbaData.length; i += 4) {
         const gray = 0.299 * rgbaData[i] + 0.587 * rgbaData[i+1] + 0.114 * rgbaData[i+2];
         grayPixels.push(gray);
@@ -248,20 +234,22 @@ function applyAdaptiveContrastThreshold(rgbaData) {
         if (gray > maxGray) maxGray = gray;
     }
 
-    // Ortam ışığına göre dinamik bir orta kesim eşiği (Otsu simülasyonu) oluşturur
     const dynamicThreshold = (minGray + maxGray) / 2;
-
     const binaryPixels = [];
     for (let i = 0; i < grayPixels.length; i++) {
-        binaryPixels.push(grayPixels[i] < dynamicThreshold ? 0 : 1);
+        // Beyaz kart zeminini güçlendirmek için gürültü filtresi
+        binaryPixels.push(grayPixels[i] < (dynamicThreshold - 10) ? 0 : 1);
     }
     return binaryPixels;
 }
 
-// Piksellerdeki renk kırılma (geçiş) indekslerini yakalayan motor
 function getTransitions(pixels) {
     const trans = [];
-    for (let i = 0; i < pixels.length - 1; i++) {
+    // Kenar gürültülerini (ekranın en sağı ve en solu) eliyoruz, sadece orta bölgeye odaklanıyoruz
+    const startX = Math.floor(pixels.length * 0.1);
+    const endX = Math.floor(pixels.length * 0.9);
+    
+    for (let i = startX; i < endX; i++) {
         if (pixels[i] !== pixels[i+1]) {
             trans.push(i);
         }
@@ -269,7 +257,6 @@ function getTransitions(pixels) {
     return trans;
 }
 
-// Sistemi Başlat
 initCamera();
 </script>
 </body>
