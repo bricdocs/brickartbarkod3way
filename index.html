@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Orijinal v7.18</title>
+    <title>Jannersten v7.19</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
         
         .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
         
-        /* v7.12'nin O KUSURSUZ SIYAH BEYAZ CSS FILTRESI GERI GELDI */
         video { 
             width: 100%; 
             height: 100%; 
@@ -18,16 +17,16 @@
             filter: grayscale(1) contrast(5) brightness(0.9); 
         }
         
+        /* v7.19 DEĞİŞİKLİĞİ: Alt çizgi sabit, üst çizgi ekranın tepesine kadar açıldı */
         .guide-line { 
             position: absolute; 
-            top: 50%; 
+            top: 5%; /* Ekranın üstünden 1 cm (yaklaşık %5) boşluk bırakıldı */
             left: 0; 
             width: 100%; 
-            height: 60px; /* Rahat hizalamanız için 60 piksellik koridor alanı */
+            height: 216px; /* Alt çizgiyi sabit tutarak tünel yüksekliği genişletildi */
             background: rgba(0, 255, 204, 0.05); 
             border-top: 2px dashed #00ffcc;
             border-bottom: 2px dashed #00ffcc;
-            transform: translateY(-50%); 
             z-index: 10; 
         }
         
@@ -50,7 +49,7 @@
 </head>
 <body>
 
-    <h2>Jannersten v7.18 (v7.12 Tabanlı)</h2>
+    <h2>Jannersten v7.19 (Üstü Açık Tünel)</h2>
     
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
@@ -74,7 +73,7 @@
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
 
-    <div class="debug-info" id="debug">v7.12 Hafif Motoru Aktif</div>
+    <div class="debug-info" id="debug">v7.19 Motoru Aktif</div>
 
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
@@ -132,7 +131,7 @@ function playBeepSound() {
 
 async function startCamera(facingMode) {
     if (currentStream) currentStream.getTracks().forEach(track => track.stop());
-    if (tickInterval) clearInterval(tickInterval);
+    if (tickInterval) clearInterval(trackID => clearInterval(tickInterval));
 
     try {
         currentStream = await navigator.mediaDevices.getUserMedia({
@@ -140,7 +139,6 @@ async function startCamera(facingMode) {
         });
         video.srcObject = currentStream;
         
-        // v7.12'nin o tıkır tıkır çalışan Force-Start zamanlayıcısı geri geldi
         setTimeout(() => {
             tickInterval = setInterval(tick, 1000 / 30);
         }, 1200);
@@ -166,19 +164,18 @@ clearLogBtn.addEventListener('click', () => {
 
 function tick() {
     if (video.readyState >= 2) {
-        // v7.12'deki gibi videoyu canvasa doğrudan, işlemciyi yormadan aktarıyoruz
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        const midY = 240;
         const fullFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = fullFrame.data;
 
         let maxTransitions = 0;
         let bestTransitionsArray = [];
-        let bestYFound = midY;
+        let bestYFound = 240;
 
-        // Genişletilmiş ve esnek 60 piksellik koridor alanı (Hizalamayı kolaylaştırmak için)
-        for (let y = midY - 30; y < midY + 30; y += 2) {
+        // v7.19 MİLİMETRİK DEĞİŞİKLİK: Alt koordinat (270) sabit tutuldu, üst koordinat ekranın tepesine (40) kadar genişletildi.
+        // Motor ayarlarına ve hassasiyetlerine asla dokunulmadı.
+        for (let y = 40; y < 270; y += 2) {
             const binaryRow = [];
             for (let x = 0; x < canvas.width; x++) {
                 const pixelIndex = (y * canvas.width + x) * 4;
@@ -206,16 +203,13 @@ function tick() {
             }
         }
 
-        // Sonuçları İşleme Süzgeci
         if (bestTransitionsArray.length >= 7) {
-            
             const widths = [];
             for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
 
             const sum = widths.reduce((a, b) => a + b, 0);
             const avgWidth = sum / widths.length;
 
-            // Küçücük gölge parazitlerini elleyen kalınlık süzgeci
             if (avgWidth < 3.0) {
                 handleEmptyFrame();
                 return;
@@ -279,7 +273,7 @@ function resetToWaiting() {
         resultDiv.innerText = "Kart Bekleniyor...";
         resultDiv.style.color = "#fff";
     }
-    debugDiv.innerText = "Hafif Motor v7.12 Çekirdeği Aktif";
+    debugDiv.innerText = "Üstü Genişletilmiş Tünel v7.19 Aktif";
 }
 
 startCamera(currentFacingMode);
