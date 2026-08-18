@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jannersten Hard-Reset v7.44</title>
+    <style>
+        body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
+        h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
+        .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
+        video { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(5) brightness(0.8); }
+        .guide-line { position: absolute; top: 50%; left: 0; width: 100%; height: 216px; background: rgba(0, 255, 204, 0.05); border-top: 2px dashed #00ffcc; border-bottom: 2px dashed #00ffcc; z-index: 10; }
+        .control-panel { display: flex; justify-content: center; gap: 10px; margin: 10px auto; max-width: 400px; }
+        button { padding: 10px 15px; border: none; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; }
+        .btn-cam { background: #00ffcc; color: #000; }
+        .btn-clear { background: #ff3b30; color: #fff; }
+        .slider-box { margin: 10px auto; max-width: 350px; background: #222; padding: 8px; border-radius: 8px; border: 1px solid #444; font-size: 13px; color: #aaa; }
+        .slider-box input { width: 80%; accent-color: #00ffcc; }
+        .result-box { margin: 5px auto; padding: 10px; background: #1e1e1e; border-radius: 8px; font-size: 20px; font-weight: bold; width: 280px; border: 1px solid #333; }
+        .code-display-box { margin: 10px auto; max-width: 320px; background: #000; border: 2px solid #444; border-radius: 10px; padding: 12px; font-family: 'Courier New', Courier, monospace; font-size: 18px; font-weight: bold; line-height: 1.8; text-align: center; }
+        .code-row { user-select: all; -webkit-user-select: all; color: #ffffff; background: #222; padding: 4px 10px; border-radius: 5px; display: inline-block; margin: 4px 0; letter-spacing: 2px; }
+        .code-label { font-size: 13px; color: #888; display: block; margin-top: 5px; }
+        .log-container { margin: 10px auto; max-width: 350px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; text-align: left; }
+        .log-title { font-size: 12px; color: #00ffcc; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 3px; }
+        .log-list { font-family: monospace; font-size: 12px; color: #fff; max-height: 140px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; line-height: 1.5; }
+        .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #555; text-align: center; }
+    </style>
+</head>
+<body>
+    <h2>Jannersten v7.44 (Zorla Sıfırlamalı)</h2>
+    <div class="control-panel">
+        <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
+        <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
+    </div>
+    <div class="slider-box">
+        <label for="threshSlider">Otsu İnce Ayar Kaydırıcı: <span id="threshVal">1.00</span></label><br>
+        <input type="range" id="threshSlider" min="80" max="120" value="100">
+    </div>
+    <div class="container">
+        <video id="webcam" autoplay playsinline muted></video>
+        <div class="guide-line"></div>
+    </div>
+    <div class="result-box" id="result">Kamera Hazırlanıyor...</div>
+    <div class="code-display-box" id="codeDisplayBox">
+        <span class="code-label">Okunan Kart Kodları:</span>
+        <div style="margin-top:5px;">Düz: <span class="code-row" id="codeFlat">-</span></div>
+        <div>Ters: <span class="code-row" id="codeReverse">-</span></div>
+    </div>
+    <div class="log-container">
+        <div class="log-title">Teşhis Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
+        <div class="log-list" id="logList">Henüz kart okunmadı.</div>
+    </div>
+    <div class="debug-info" id="debug">Zorunlu Anlık Sıfırlama Aktif</div>
+    <canvas id="analyzerCanvas" style="display:none;"></canvas>
+
+    <script>
+const JANNERSTEN_MAP = {
+    // --- MAÇA SERİSİ (Spades - S) ---
+    "S3": ["0001110", "0111000"], // [YENİ]
+    "S4": ["0101001", "1001010"],
+    "S5": ["0101100", "0011010"],
+    "S6": ["0011100", "0011100"], // Simetrik
+    "S9": ["0110000", "0000110"], // [YENİ] [Mükerrer H3]
+
+    // --- SİNEK SERİSİ (Clubs - C) ---
+    "C10": ["0100111", "1110010"], // [Mükerrer H9]
+    "C8": ["0100110", "0110010"], // [YENİ] [Çapraz Mükerrer D8]
+    "C6": ["0011011", "1101100"], 
+    "C5": ["0111110", "0111110"], // Simetrik
+
+    // --- KARO SERİSİ (Diamonds - D) ---
+    "HA": ["0101010", "0101010"], // [YENİ] Simetrik [Mükerrer DK]
+    "DK": ["0101010", "0101010"], // Simetrik [Mükerrer HA]
+    "D10": ["0101000", "0001010"], // [YENİ] [Mükerrer C6]
+    "D9": ["0010100", "0010100"], // [YENİ] Simetrik
+    "D8": ["0110010", "0100110"], // [YENİ] [Çapraz Mükerrer C8]
+    "D7": ["0100010", "0100010"], // [YENİ] Simetrik
+    "D6": ["0010000", "0000100"], // [YENİ]
+    "D4": ["0101110", "0111010"],
+    "D3": ["1111001", "1001111"], // [YENİ]
+
+    // --- KUPA SERİSİ (Hearts - H) ---
+    "HK": ["0000101", "1010000"], // Kupa King
+    "HQ": ["0000011", "1100000"], // [YENİ] Kupa Queen (Kız)
+    "H9": ["0111100", "0011110"], // [Mükerrer C10]
+    "HT": ["0100001", "1000010"], // Kupa 10
+    "H5": ["0001111", "1111000"], // [YENİ]
+    "H3": ["0110000", "0000110"]  // [YENİ] [Mükerrer S9]
+};
+
+
+const video = document.getElementById('webcam');
+const canvas = document.getElementById('analyzerCanvas');
+const ctx = canvas.getContext('2d');
+const resultDiv = document.getElementById('result');
+const debugDiv = document.getElementById('debug');
+const logListDiv = document.getElementById('logList');
+const cardCountSpan = document.getElementById('cardCount');
+const toggleCamBtn = document.getElementById('toggleCamBtn');
+const clearLogBtn = document.getElementById('clearLogBtn');
+const threshSlider = document.getElementById('threshSlider');
+const threshValSpan = document.getElementById('threshVal');
+const codeFlatSpan = document.getElementById('codeFlat');
+const codeReverseSpan = document.getElementById('codeReverse');
+
+canvas.width = 640; canvas.height = 480;
+let currentStream = null; let currentFacingMode = "environment"; 
+let tickInterval = null; let otsuMultiplier = 1.0; 
+let scannedCardsSet = new Set(); let cardLogArray = []; 
+let isSystemLocked = false; let isWarmUpActive = false; 
+let lastDetectedRawCode = ""; let rawCodeMatchCount = 0;        
+const STABILITY_REQUIRED_FRAMES = 5; 
+
+threshSlider.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value); otsuMultiplier = val / 100;
+    threshValSpan.innerText = otsuMultiplier.toFixed(2);
+});
+
+function playBeepSound() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(1050, audioCtx.currentTime); 
+        gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime); oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination); oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.08); 
+    } catch (e) {}
+}
+
+async function startCamera(facingMode) {
+    if (currentStream) currentStream.getTracks().forEach(track => track.stop());
+    if (tickInterval) clearInterval(tickInterval);
+    try {
+        currentStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 640, height: 480, facingMode: facingMode }
+        });
+        video.srcObject = currentStream;
+        isWarmUpActive = true; resultDiv.innerText = "Kamera Isınıyor (1.5sn)..."; resultDiv.style.color = "#ff9500";
+        setTimeout(() => { 
+            tickInterval = setInterval(tick, 1000 / 30); isWarmUpActive = false;
+            if (!isSystemLocked) { resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; }
+        }, 1500);
+    } catch (err) { resultDiv.innerText = "Kamera Başlatılamadı!"; }
+}
+
+toggleCamBtn.addEventListener('click', () => {
+    currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+    startCamera(currentFacingMode);
+});
+
+clearLogBtn.addEventListener('click', () => {
+    if (isWarmUpActive) return;
+    scannedCardsSet.clear(); cardLogArray = []; cardCountSpan.innerText = "0";
+    lastDetectedRawCode = ""; rawCodeMatchCount = 0;
+    codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-";
+    isWarmUpActive = true; isSystemLocked = true;
+    resultDiv.innerText = "Deste Sıfırlanıyor (1.5sn)..."; resultDiv.style.color = "#ff3b30";
+    logListDiv.innerText = "Deste sıfırlandı. Yeni kart bekleniyor..."; logListDiv.style.color = "#888";
+    setTimeout(() => { isWarmUpActive = false; isSystemLocked = false; resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; }, 1500);
+});
+
+function calculateOtsuThreshold(data, width, height) {
+    let histogram = new Array(256).fill(0); let totalPixels = 0;
+    for (let y = 40; y < 270; y += 2) {
+        for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4;
+            const gray = Math.floor(0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2]);
+            histogram[gray]++; totalPixels++;
+        }
+    }
+    let sum = 0; for (let i = 0; i < 256; i++) sum += i * histogram[i];
+    let sumB = 0, wB = 0, wF = 0, varMax = 0, threshold = 115;
+    for (let i = 0; i < 256; i++) {
+        wB += histogram[i]; if (wB === 0) continue;
+        wF = totalPixels - wB; if (wF === 0) break;
+        sumB += i * histogram[i];
+        let mB = sumB / wB; let mF = (sum - sumB) / wF;
+        let varBetween = wB * wF * (mB - mF) * (mB - mF);
+        if (varBetween > varMax) { varMax = varBetween; threshold = i; }
+    }
+    return threshold;
+}
+</script>
+
+<script>
+function findMapDetailsForCode(binaryCode) {
+    for (let cardName in JANNERSTEN_MAP) {
+        const arr = JANNERSTEN_MAP[cardName];
+        if (arr[0] === binaryCode) return { name: cardName, type: "Düz", dataCode: arr[0] };
+        if (arr[1] === binaryCode) return { name: cardName, type: "Ters", dataCode: arr[0] };
+    }
+    return null;
+}
+
+function tick() {
+    if (video.readyState >= 2) {
+        if (isWarmUpActive) return; 
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const fullFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = fullFrame.data;
+        const globalThreshold = calculateOtsuThreshold(data, canvas.width, canvas.height) * otsuMultiplier;
+        let maxTransitions = 0; let bestTransitionsArray = []; let bestYFound = 240;
+
+        for (let y = 40; y < 270; y += 2) {
+            const binaryRow = [];
+            for (let x = 0; x < canvas.width; x++) {
+                const pixelIndex = (y * canvas.width + x) * 4;
+                const gray = 0.299 * data[pixelIndex] + 0.587 * data[pixelIndex+1] + 0.114 * data[pixelIndex+2];
+                binaryRow.push(gray < globalThreshold ? 0 : 1);
+            }
+            const trans = []; const startX = Math.floor(canvas.width * 0.15); const endX = Math.floor(canvas.width * 0.85);
+            for (let i = startX; i < endX; i++) { if (binaryRow[i] !== binaryRow[i+1]) trans.push(i); }
+            if (trans.length >= 7 && trans.length <= 15) {
+                if (trans.length > maxTransitions) { maxTransitions = trans.length; bestTransitionsArray = trans; bestYFound = y; }
+            }
+        }
+
+        if (bestTransitionsArray.length >= 7) {
+            if (isSystemLocked) return;
+            const widths = [];
+            for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
+            
+            const minW = Math.min(...widths); const maxW = Math.max(...widths);
+            if (maxW / minW < 1.8) { resetStability(); return; }
+            const sum = widths.reduce((a, b) => a + b, 0); const avgWidth = sum / widths.length;
+            if (avgWidth < 3.0) { resetStability(); return; }
+
+            let binaryCode = "";
+            for (let i = 0; i < widths.length; i++) binaryCode += (widths[i] > avgWidth) ? "1" : "0";
+
+            // --- SİZİN BULDUĞUNUZ O KUSURSUZ SERT SIFIRLAMA MATEMATİĞİ EN TEPEYE BAĞLANDI ---
+            // Eğer yeni gelen kod, bir önceki karedeki kodla uyuşmuyorsa, sayacı anında acımadan baltayla kes ve sıfırla!
+            if (binaryCode === lastDetectedRawCode) { 
+                rawCodeMatchCount++; 
+            } else { 
+                lastDetectedRawCode = binaryCode; 
+                rawCodeMatchCount = 1; 
+            }
+
+            // 5 Kare Kararlılık süzgeci tam burada devreye girer
+            if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) return;
+
+            const reversedCode = binaryCode.split("").reverse().join("");
+            codeFlatSpan.innerText = binaryCode; codeReverseSpan.innerText = reversedCode;
+            let match = findMapDetailsForCode(binaryCode);
+
+            if (match) {
+                if (scannedCardsSet.has(match.name)) {
+                    resultDiv.innerText = `${match.name} (Zaten Okundu)`; resultDiv.style.color = "#ff3b30"; resetStability(); return;
+                }
+                resultDiv.innerText = "🎉 " + match.name; resultDiv.style.color = "#00ffcc"; playBeepSound();
+                scannedCardsSet.add(match.name); cardCountSpan.innerText = scannedCardsSet.size;
+                const logLine = `<b>${match.name}</b> (${match.type}) | Data: <span style="color:#00ffcc">${match.dataCode}</span> | Canlı: <span style="color:#ff9500">${binaryCode}</span>`;
+                cardLogArray.push(logLine);
+                logListDiv.innerHTML = cardLogArray.slice().reverse().map((line, idx) => `[${cardLogArray.length - idx}] ${line}`).join("<br>");
+                logListDiv.style.color = "#fff";
+                isSystemLocked = true; resultDiv.innerText = "Lütfen Kartı Değiştirin..."; resultDiv.style.color = "#ff9500";
+                setTimeout(() => { isSystemLocked = false; resetStability(); resetToWaiting(); }, 1500);
+            } else { resultDiv.innerText = "Tanımsız Kart"; resultDiv.style.color = "#ff9500"; }
+            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound}`;
+        } else { 
+            // Kadraj anlık olarak boşaldığı ilk milisaniyede sayacı zorla sıfırla (Cebinde sayı birikemez!)
+            resetStability(); 
+        }
+    }
+}
+function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
+function resetToWaiting() {
+    if (!isSystemLocked && !isWarmUpActive) { resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; }
+    debugDiv.innerText = "v7.44 Sert Sıfırlama Modu Yayında";
+}
+startCamera(currentFacingMode);
+</script>
+</body>
+</html>
