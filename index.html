@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Teşhis v7.37</title>
+    <title>Jannersten Kesin Çözüm v7.38</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -27,7 +27,7 @@
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.37 (İkili Binary Teşhis)</h2>
+    <h2>Jannersten v7.38 (Oran Filtreli)</h2>
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
@@ -50,7 +50,7 @@
         <div class="log-title">Teşhis Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
-    <div class="debug-info" id="debug">Detaylı Loglama Aktif</div>
+    <div class="debug-info" id="debug">Akıllı Geometri Oran süzgeci Aktif</div>
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
@@ -84,7 +84,7 @@ const codeReverseSpan = document.getElementById('codeReverse');
 canvas.width = 640; canvas.height = 480;
 let currentStream = null; let currentFacingMode = "environment"; 
 let tickInterval = null; let otsuMultiplier = 1.0; 
-let scannedCardsSet = new Set(); let cardLogArray = []; // Teşhis geçmişi için dizi açıldı
+let scannedCardsSet = new Set(); let cardLogArray = []; 
 let isSystemLocked = false;       
 let lastDetectedRawCode = ""; let rawCodeMatchCount = 0;        
 const STABILITY_REQUIRED_FRAMES = 5; 
@@ -152,11 +152,8 @@ function calculateOtsuThreshold(data, width, height) {
     return threshold;
 }
 
-// Belirtilen isme ait haritadaki ilk binary kodu bulan yardımcı fonksiyon
 function findMapBinaryForCard(cardName) {
-    for (let key in JANNERSTEN_MAP) {
-        if (JANNERSTEN_MAP[key] === cardName) return key;
-    }
+    for (let key in JANNERSTEN_MAP) { if (JANNERSTEN_MAP[key] === cardName) return key; }
     return "------";
 }
 
@@ -172,7 +169,7 @@ function tick() {
             const binaryRow = [];
             for (let x = 0; x < canvas.width; x++) {
                 const pixelIndex = (y * canvas.width + x) * 4;
-                const gray = 0.299 * data[pixelIndex] + 0.587 * data[pixelIndex+1] + 0.114 * data[pixelIndex+2];
+                const gray = 0.299 * data[pixelIndex] + 0.587 * data[data[pixelIndex+1]] ? 0 : 0.299 * data[pixelIndex] + 0.587 * data[pixelIndex+1] + 0.114 * data[pixelIndex+2];
                 binaryRow.push(gray < globalThreshold ? 0 : 1);
             }
             const trans = []; const startX = Math.floor(canvas.width * 0.15); const endX = Math.floor(canvas.width * 0.85);
@@ -186,6 +183,13 @@ function tick() {
             if (isSystemLocked) return;
             const widths = [];
             for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
+            
+            // --- v7.38 SİHİRLİ DOKUNUŞ: GEOMETRİK ÇİZGİ ORAN SÜZGECİ ---
+            const minW = Math.min(...widths); const maxW = Math.max(...widths);
+            // Karıncalanmaların kalınlıkları birbirine çok yakındır (maxW/minW oranı küçüktür).
+            // Gerçek kartta geniş/dar farkından ötürü bu oran 1.8 katından büyük olmak zorundadır.
+            if (maxW / minW < 1.8) { resetStability(); return; }
+
             const sum = widths.reduce((a, b) => a + b, 0); const avgWidth = sum / widths.length;
             if (avgWidth < 3.0) { resetStability(); return; }
 
@@ -207,7 +211,6 @@ function tick() {
                 resultDiv.innerText = "🎉 " + foundCard; resultDiv.style.color = "#00ffcc"; playBeepSound();
                 scannedCardsSet.add(foundCard); cardCountSpan.innerText = scannedCardsSet.size;
                 
-                // --- v7.37 BÜYÜK YENİLİK: SEÇTİĞİNİZ İKİLİ BİNYARY TEŞHİS LOGLAMA ALGORİTMASI ---
                 const dataBinary = findMapBinaryForCard(foundCard);
                 const logLine = `<b>${foundCard}</b> | Data: <span style="color:#00ffcc">${dataBinary}</span> | Canlı: <span style="color:#ff9500">${binaryCode}</span>`;
                 cardLogArray.push(logLine);
@@ -226,7 +229,7 @@ function tick() {
 function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
 function resetToWaiting() {
     if (!isSystemLocked) { resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; }
-    debugDiv.innerText = "v7.37 Kararlı Teşhis Sürümü";
+    debugDiv.innerText = "v7.38 Oran Kontrollü Sürüm";
 }
 startCamera(currentFacingMode);
 </script>
