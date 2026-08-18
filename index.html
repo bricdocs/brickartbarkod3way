@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Edit Lab v7.49</title>
+    <title>Jannersten Manuel Lab v7.50</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -14,6 +14,11 @@
         button { padding: 10px 15px; border: none; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; }
         .btn-cam { background: #00ffcc; color: #000; }
         .btn-clear { background: #ff3b30; color: #fff; }
+        
+        /* v7.50 Yenilik: Büyük, basması kolay kod tetikleme butonu */
+        .btn-save { background: #34c759; color: #fff; width: 280px; font-size: 16px; padding: 12px; margin: 8px auto; display: block; border-radius: 10px; box-shadow: 0 0 10px rgba(52, 199, 89, 0.4); }
+        .btn-save:active { background: #248a3d; transform: scale(0.98); }
+
         .slider-box { margin: 10px auto; max-width: 350px; background: #222; padding: 8px; border-radius: 8px; border: 1px solid #444; font-size: 13px; color: #aaa; }
         .slider-box input { width: 80%; accent-color: #00ffcc; }
         .result-box { margin: 5px auto; padding: 10px; background: #1e1e1e; border-radius: 8px; font-size: 20px; font-weight: bold; width: 280px; border: 1px solid #333; }
@@ -22,19 +27,15 @@
         .code-label { font-size: 13px; color: #888; display: block; margin-top: 5px; }
         .log-container { margin: 10px auto; max-width: 350px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; text-align: left; }
         .log-title { font-size: 12px; color: #00ffcc; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 3px; }
-        
-        /* v7.49 Yenilik: Kopyalamayı bozmayan, satır içi şık ve düzenlenebilir metin kutusu CSS yapısı */
         .log-list { font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #fff; max-height: 200px; overflow-y: auto; line-height: 1.8; }
         .log-item { background: #111; padding: 6px 8px; border-radius: 4px; margin-bottom: 4px; border: 1px solid #222; display: flex; align-items: center; justify-content: flex-start; }
         .card-input { background: #222; border: 1px dashed #00ffcc; color: #00ffcc; font-family: monospace; font-size: 13px; font-weight: bold; width: 45px; text-align: center; padding: 1px; margin: 0 2px; border-radius: 3px; text-transform: uppercase; }
         .card-input:focus { border-style: solid; background: #000; outline: none; }
-        .code-string { user-select: all; -webkit-user-select: all; color: #aaa; margin-left: 5px; }
-
         .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #555; text-align: center; }
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.49 (Canlı Edit Lab)</h2>
+    <h2>Jannersten v7.50 (Buton Onaylı Lab)</h2>
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
@@ -53,17 +54,18 @@
         <div style="margin-top:5px;">Düz: <span class="code-row" id="codeFlat">-</span></div>
         <div>Ters: <span class="code-row" id="codeReverse">-</span></div>
     </div>
+    
+    <!-- v7.50 Yenilik: Sadece kullanıcı bastığında history'ye kaydeden tetikleyici buton -->
+    <button class="btn-save" id="saveCodeBtn" disabled>Kodu Listeye Ekle</button>
+
     <div class="log-container">
-        <div class="log-title">Canlı Düzenlenebilir Liste (Toplam: <span id="cardCount">0</span>):</div>
-        <div class="log-list" id="logList">Henüz kart okunmadı.</div>
+        <div class="log-title">Onaylanmış Liste (Toplam: <span id="cardCount">0</span>):</div>
+        <div class="log-list" id="logList">Henüz kayıt yapılmadı.</div>
     </div>
-    <div class="debug-info" id="debug">Y: 240 Giriş Kutulu Hücre Motoru Aktif</div>
+    <div class="debug-info" id="debug">Y: 240 Manuel Buton Kontrolü Aktif</div>
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
-// Harita sıfırdan kurulacağı için JANNERSTEN_MAP tamamen boş bir şablon olarak başlar.
-const JANNERSTEN_MAP = {};
-
 const video = document.getElementById('webcam');
 const canvas = document.getElementById('analyzerCanvas');
 const ctx = canvas.getContext('2d');
@@ -73,6 +75,7 @@ const logListDiv = document.getElementById('logList');
 const cardCountSpan = document.getElementById('cardCount');
 const toggleCamBtn = document.getElementById('toggleCamBtn');
 const clearLogBtn = document.getElementById('clearLogBtn');
+const saveCodeBtn = document.getElementById('saveCodeBtn'); // v7.50 Onay butonu bağlandı
 const threshSlider = document.getElementById('threshSlider');
 const threshValSpan = document.getElementById('threshVal');
 const codeFlatSpan = document.getElementById('codeFlat');
@@ -85,6 +88,10 @@ let scannedCardsSet = new Set(); let cardLogArray = [];
 let isSystemLocked = false; let isWarmUpActive = false; 
 let lastDetectedRawCode = ""; let rawCodeMatchCount = 0;        
 const STABILITY_REQUIRED_FRAMES = 5; 
+
+// v7.50 Yenilik: O an hatta donmuş olan en son kararlı kodları tutan geçici bellek değişkenleri
+let activeFlatCode = "";
+let activeReverseCode = "";
 
 threshSlider.addEventListener('input', (e) => {
     const val = parseInt(e.target.value); otsuMultiplier = val / 100;
@@ -126,11 +133,12 @@ toggleCamBtn.addEventListener('click', () => {
 clearLogBtn.addEventListener('click', () => {
     if (isWarmUpActive) return;
     scannedCardsSet.clear(); cardLogArray = []; cardCountSpan.innerText = "0";
-    lastDetectedRawCode = ""; rawCodeMatchCount = 0;
+    lastDetectedRawCode = ""; rawCodeMatchCount = 0; activeFlatCode = ""; activeReverseCode = "";
     codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-";
+    saveCodeBtn.disabled = true; saveCodeBtn.innerText = "Kodu Listeye Ekle";
     isWarmUpActive = true; isSystemLocked = true;
     resultDiv.innerText = "Deste Sıfırlanıyor (1.5sn)..."; resultDiv.style.color = "#ff3b30";
-    logListDiv.innerText = "Deste sıfırlandı. Yeni kart bekleniyor..."; logListDiv.style.color = "#888";
+    logListDiv.innerText = "Deste sıfırlandı. Yeni kayıt bekleniyor..."; logListDiv.style.color = "#888";
     setTimeout(() => { isWarmUpActive = false; isSystemLocked = false; resultDiv.innerText = "Rehber Çizgiye Hizalayın..."; resultDiv.style.color = "#fff"; }, 1500);
 });
 
@@ -158,18 +166,15 @@ function calculateOtsuThreshold(data, width, height) {
 </script>
 
 <script>
-// Canlı eklenen input kutularının içindeki değerleri tarayıcı hafızasında koruyan yenilikçi güncelleme fonksiyonu
 function updateInputValue(index, value) {
     if (cardLogArray[index]) {
         cardLogArray[index].userTyped = value.toUpperCase();
-        renderLogList(); // Listeyi yeniden çiz ama input odaklarını bozma
+        renderLogList();
     }
 }
 
-// Giriş kutularına yazılan kart adlarının yeni kart geldiğinde silinmesini engelleyen dinamik çizim motoru
 function renderLogList() {
     let htmlContent = "";
-    // En yeni okunan kartın en üstte görünmesi için diziyi tersten ekrana basıyoruz
     for (let i = cardLogArray.length - 1; i >= 0; i--) {
         const item = cardLogArray[i];
         htmlContent += `
@@ -181,6 +186,48 @@ function renderLogList() {
     }
     logListDiv.innerHTML = htmlContent;
 }
+
+// --- v7.50 MANUEL BUTON TETİKLEME FONKSİYONU ---
+// Sadece siz ekrandaki yeşil butona bastığınızda çalışır, havada birikme ihtimalini sıfıra indirir.
+saveCodeBtn.addEventListener('click', () => {
+    if (!activeFlatCode || isWarmUpActive) return;
+
+    // Aynı kodun mükerrer olarak listeye eklenmesini engelleyen iç kilit kontrolü
+    let isAlreadySaved = cardLogArray.some(el => el.flatCode === activeFlatCode);
+    if (isAlreadySaved) {
+        resultDiv.innerText = "Bu Kod Zaten Listede Verildi!";
+        resultDiv.style.color = "#ff3b30";
+        return;
+    }
+
+    playBeepSound();
+    
+    // Geçici bellekte bekleyen kodları kalıcı History dizisine aktarıyoruz
+    cardLogArray.push({
+        userTyped: "",
+        flatCode: activeFlatCode,
+        revCode: activeReverseCode
+    });
+    
+    cardCountSpan.innerText = cardLogArray.length;
+    renderLogList(); // Listeyi güvenle güncelle, eski yazılar asla silinmez
+    
+    // Başarılı kayıttan sonra sistemi 1.5 saniye kilitle ki kullanıcı rahatça kartı değiştirebilsin
+    isSystemLocked = true;
+    saveCodeBtn.disabled = true;
+    saveCodeBtn.innerText = "Başarıyla Eklendi 👍";
+    resultDiv.innerText = "Lütfen Kartı Değiştirin...";
+    resultDiv.style.color = "#ff9500";
+    
+    setTimeout(() => {
+        isSystemLocked = false;
+        activeFlatCode = ""; activeReverseCode = "";
+        codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-";
+        saveCodeBtn.innerText = "Kodu Listeye Ekle";
+        resetStability();
+        resetToWaiting();
+    }, 1500);
+});
 
 function tick() {
     if (video.readyState >= 2) {
@@ -214,39 +261,42 @@ function tick() {
 
             let binaryCode = "";
             for (let i = 0; i < widths.length; i++) binaryCode += (widths[i] > avgWidth) ? "1" : "0";
+
+            // Sizin o efsane "Aynı kartsa say, milisaniyelik farklıysa sıfırla" sert kuralınız
             if (binaryCode === lastDetectedRawCode) { rawCodeMatchCount++; } 
             else { lastDetectedRawCode = binaryCode; rawCodeMatchCount = 1; }
+
             if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) return;
 
             const reversedCode = binaryCode.split("").reverse().join("");
-            codeFlatSpan.innerText = binaryCode; codeReverseSpan.innerText = reversedCode;
-
-            // Aynı barkodun üst üste tekrar listeye sızmasını engelleyen akıllı hafıza filtresi
-            let internalCheck = cardLogArray.some(el => el.flatCode === binaryCode);
-
-            if (!internalCheck) {
-                playBeepSound();
-                // Yeni hücre objesini oluşturuyoruz. Başlangıçta metin kutusu içi bomboş "" başlar.
-                cardLogArray.push({
-                    userTyped: "",
-                    flatCode: binaryCode,
-                    revCode: reversedCode
-                });
-                cardCountSpan.innerText = cardLogArray.length;
-                renderLogList(); // Listeyi güvenle çiz, eski yazdıkların asla silinmeyecek!
-                
-                isSystemLocked = true;
-                resultDiv.innerText = "Lütfen Kartı Değiştirin..."; resultDiv.style.color = "#ff9500";
-                setTimeout(() => { isSystemLocked = false; resetStability(); resetToWaiting(); }, 1500);
+            
+            // Kod 5 kare boyunca hatta sabit kalmayı başardıysa, üstteki kutularda dondur ve yeşil butonu aç!
+            codeFlatSpan.innerText = binaryCode;
+            codeReverseSpan.innerText = reversedCode;
+            resultDiv.innerText = "Sinyal Yakalandı 🎯";
+            resultDiv.style.color = "#00ffcc";
+            
+            // Kodları geçici belleğe alıyoruz, kullanıcı butona basana kadar History'ye ASLA SIZAMAZLAR!
+            activeFlatCode = binaryCode;
+            activeReverseCode = reversedCode;
+            saveCodeBtn.disabled = false; // Yeşil butonu tıklanabilir yap
+            
+        } else { 
+            // Çizgi anlık kaybolursa üstteki kutuları dondurma ama yeşil butonu henüz basılmadıysa kapat
+            if (!isSystemLocked) {
+                saveCodeBtn.disabled = true;
+                activeFlatCode = ""; activeReverseCode = "";
+                codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-";
+                resetStability();
+                resetToWaiting();
             }
-        } else { resetStability(); }
+        }
     }
 }
 function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
-function findMapNameByCode(binaryCode) { return null; }
 function resetToWaiting() {
-    if (!isSystemLocked && !isWarmUpActive) { resultDiv.innerText = "Rehber Çizgiye Hizalayın..."; resultDiv.style.color = "#fff"; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; }
-    debugDiv.innerText = "v7.49 Giriş Hücresi Aktif";
+    if (!isSystemLocked && !isWarmUpActive) { resultDiv.innerText = "Rehber Çizgiye Hizalayın..."; resultDiv.style.color = "#fff"; }
+    debugDiv.innerText = "v7.50 Manuel Kontrol Hazır";
 }
 startCamera(currentFacingMode);
 </script>
