@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Kararlı Filtre v7.16</title>
+    <title>Jannersten Tam Ekran Tarayıcı v7.17</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -12,18 +12,7 @@
         video { display: none; } 
         #displayCanvas { width: 100%; height: 100%; object-fit: cover; background: #000; }
         
-        .guide-line { 
-            position: absolute; 
-            top: 50%; 
-            left: 5%; 
-            width: 90%; 
-            height: 40px; 
-            background: rgba(0, 255, 204, 0.03); 
-            border-top: 2px dashed #00ffcc;
-            border-bottom: 2px dashed #00ffcc;
-            transform: translateY(-50%); 
-            z-index: 10; 
-        }
+        /* DAR TÜNEL VE ÇİZGİLER KALDIRILDI - TÜM EKRAN TARAMA ALANIDIR */
         
         .control-panel { display: flex; justify-content: center; gap: 10px; margin: 10px auto; max-width: 400px; }
         button { padding: 10px 15px; border: none; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; }
@@ -37,14 +26,14 @@
         
         .log-container { margin: 10px auto; max-width: 350px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; text-align: left; }
         .log-title { font-size: 12px; color: #00ffcc; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 3px; }
-        .log-list { font-family: monospace; font-size: 14px; color: #fff; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .log-list { font-family: monospace; font-size: 14px; color: #fff; max-height: 125px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
 
         .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #888; text-align: center; }
     </style>
 </head>
 <body>
 
-    <h2>Jannersten v7.16 (Kararlı Tarama)</h2>
+    <h2>Jannersten v7.17 (Tam Ekran Tarama)</h2>
     
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
@@ -59,7 +48,6 @@
     <div class="container">
         <video id="webcam" autoplay playsinline muted></video>
         <canvas id="displayCanvas"></canvas>
-        <div class="guide-line"></div>
     </div>
 
     <div class="result-box" id="result">Kart Bekleniyor...</div>
@@ -69,7 +57,7 @@
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
 
-    <div class="debug-info" id="debug">Kararlılık Filtresi: Aktif</div>
+    <div class="debug-info" id="debug">Tam Ekran Algılama Ağı: Aktif</div>
 
 <script>
 const JANNERSTEN_MAP = {
@@ -103,10 +91,9 @@ let scannedCardsSet = new Set();
 let isSystemLocked = false;       
 let consecutiveEmptyFrames = 0;   
 
-// --- v7.16 ZAMAN TABANLI ARDIŞIK DOĞRULAMA HAFIZASI ---
-let lastScannedRawCode = "";      // En son okunan ham binary dizi
-let rawCodeMatchCount = 0;        // Aynı kodun üst üste kaç kare boyunca okunduğunun sayacı
-const STABILITY_REQUIRED_FRAMES = 5; // Onaylanması için kodun kesintisiz 5 kare (saniyenin 5'te 1'i) boyunca sabit kalması şartı
+let lastScannedRawCode = "";      
+let rawCodeMatchCount = 0;        
+const STABILITY_REQUIRED_FRAMES = 5; 
 
 threshSlider.addEventListener('input', (e) => {
     globalThreshold = parseInt(e.target.value);
@@ -176,14 +163,15 @@ function tick() {
         
         const fullFrame = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
         const data = fullFrame.data;
-        const midY = 240;
 
         let maxTransitions = 0;
         let bestTransitionsArray = [];
-        let bestYFound = midY;
+        let bestYFound = 240;
 
-        // Optimize edilmiş 4-piksel aralıklı tünel taraması
-        for (let y = midY - 30; y < midY + 30; y += 4) {
+        // --- v7.17 DEV DEĞİŞİKLİK: TAM EKRAN TARAMA AĞI (FULL-FRAME CORRIDOR) ---
+        // Ekranın üst sınırından (80) alt sınırına (400) kadar olan tüm dikey alanı 
+        // 4'er piksel tarayarak dev bir ağ örüyoruz. Kart nerede olursa olsun yakalanır!
+        for (let y = 80; y < 400; y += 4) {
             const binaryRow = [];
             for (let x = 0; x < displayCanvas.width; x++) {
                 const pixelIndex = (y * displayCanvas.width + x) * 4;
@@ -215,13 +203,11 @@ function tick() {
         for (let i = 0; i < data.length; i += 4) {
             const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
             const bw = gray < globalThreshold ? 0 : 255;
-            data[i] = bw;
-            data[i+1] = bw;
-            data[i+2] = bw;
+            data[i] = bw; data[i+1] = bw; data[i+2] = bw;
         }
         ctx.putImageData(fullFrame, 0, 0);
 
-        // Kod Doğrulama Aşaması
+        // Kararlılık Kontrol Aşaması
         if (bestTransitionsArray.length >= 7) {
             const widths = [];
             for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
@@ -229,7 +215,6 @@ function tick() {
             const sum = widths.reduce((a, b) => a + b, 0);
             const avgWidth = sum / widths.length;
 
-            // Havada el titremesi parazitlerini eleyen boyut süzgeci
             if (avgWidth < 4.0 || avgWidth > 25) {
                 handleEmptyFrame();
                 return;
@@ -248,21 +233,19 @@ function tick() {
                 binaryCode += (widths[i] > avgWidth) ? "1" : "0";
             }
 
-            // --- v7.16 EN KRİTİK ADIM: ARDIŞIK ZAMAN DOĞRULAMA FİLTRESİ ---
+            // Ardışık Kare Kararlılık Filtresi (5 Kare)
             if (binaryCode === lastScannedRawCode) {
-                rawCodeMatchCount++; // Kod bir önceki kareyle aynıysa sayacı artır
+                rawCodeMatchCount++;
             } else {
-                lastScannedRawCode = binaryCode; // Kod değiştiyse yeni kodu kaydet ve sayacı sıfırla
+                lastScannedRawCode = binaryCode;
                 rawCodeMatchCount = 1;
             }
 
-            // Kod ardışık olarak hedeflenen kare sayısı boyunca sabit kalmadıysa tespiti askıya al
             if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) {
-                debugDiv.innerText = `Kod Süzülüyor... (${rawCodeMatchCount}/${STABILITY_REQUIRED_FRAMES})`;
+                debugDiv.innerText = `Sinyal Analiz Ediliyor... (${rawCodeMatchCount}/${STABILITY_REQUIRED_FRAMES})`;
                 return;
             }
 
-            // Kararlılık sağlandıysa artık kartı sözlükte ara
             let foundCard = JANNERSTEN_MAP[binaryCode];
 
             if (foundCard) {
@@ -288,7 +271,7 @@ function tick() {
                 resultDiv.innerText = "Tanımsız Kart";
                 resultDiv.style.color = "#ff9500";
             }
-            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Kararlı Kod: ${binaryCode}`;
+            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır (Y): ${bestYFound} | Kod: ${binaryCode}`;
         } else {
             handleEmptyFrame();
         }
@@ -310,7 +293,7 @@ function resetToWaiting() {
         resultDiv.innerText = "Kart Bekleniyor...";
         resultDiv.style.color = "#fff";
     }
-    debugDiv.innerText = "Kararlılık Filtresi: Aktif | Hayaletler Engellendi";
+    debugDiv.innerText = "Tam Ekran Ağı Aktif | Kör Tarama Devrede";
 }
 
 startCamera(currentFacingMode);
