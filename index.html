@@ -3,20 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Mobile Core v7.45</title>
+    <title>Jannersten Kesin Sürüm v7.42</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
         .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
-        
-        /* v7.41'in O ÇOK SEVİLEN PÜRÜZSÜZ SİYAH BEYAZ CSS FİLTRESİNE GERİ DÖNÜLDÜ */
-        video { 
-            width: 100%; 
-            height: 100%; 
-            object-fit: cover; 
-            filter: grayscale(1) contrast(5) brightness(0.9); 
-        }
-        
+        video { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(5) brightness(0.9); }
         .guide-line { position: absolute; top: 50%; left: 0; width: 100%; height: 216px; background: rgba(0, 255, 204, 0.05); border-top: 2px dashed #00ffcc; border-bottom: 2px dashed #00ffcc; z-index: 10; }
         .control-panel { display: flex; justify-content: center; gap: 10px; margin: 10px auto; max-width: 400px; }
         button { padding: 10px 15px; border: none; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; }
@@ -35,7 +27,7 @@
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.45 (Sadece Cep Sürümü)</h2>
+    <h2>Jannersten v7.42 (Nihai Saha Sürümü)</h2>
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
@@ -58,10 +50,11 @@
         <div class="log-title">Teşhis Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
-    <div class="debug-info" id="debug">Mobile Core v7.45 Aktif</div>
+    <div class="debug-info" id="debug">Çift Yönlü Emniyet Kilitleri Aktif</div>
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
+// --- v7.42 SİZİNLE BERABER DOĞRULANAN VE MÜKERRER NOTLARI EKLENEN KÖŞELİ HARİTA ---
 const JANNERSTEN_MAP = {
     // --- MAÇA SERİSİ (Spades - S) ---
     "S3": ["0001110", "0111000"], // [YENİ]
@@ -115,7 +108,7 @@ canvas.width = 640; canvas.height = 480;
 let currentStream = null; let currentFacingMode = "environment"; 
 let tickInterval = null; let otsuMultiplier = 1.0; 
 let scannedCardsSet = new Set(); let cardLogArray = []; 
-let isSystemLocked = false; let isWarmUpActive = false; 
+let isSystemLocked = false; let isWarmUpActive = false; // Isınma sürecini takip eden koruma bayrağı
 let lastDetectedRawCode = ""; let rawCodeMatchCount = 0;        
 const STABILITY_REQUIRED_FRAMES = 5; 
 
@@ -143,9 +136,14 @@ async function startCamera(facingMode) {
             video: { width: 640, height: 480, facingMode: facingMode }
         });
         video.srcObject = currentStream;
-        isWarmUpActive = true; resultDiv.innerText = "Kamera Isınıyor (1.5sn)..."; resultDiv.style.color = "#ff9500";
+        
+        isWarmUpActive = true;
+        resultDiv.innerText = "Kamera Isınıyor (1.5sn)...";
+        resultDiv.style.color = "#ff9500";
+        
         setTimeout(() => { 
-            tickInterval = setInterval(tick, 1000 / 30); isWarmUpActive = false;
+            tickInterval = setInterval(tick, 1000 / 30); 
+            isWarmUpActive = false;
             if (!isSystemLocked) { resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; }
         }, 1500);
     } catch (err) { resultDiv.innerText = "Kamera Başlatılamadı!"; }
@@ -156,15 +154,26 @@ toggleCamBtn.addEventListener('click', () => {
     startCamera(currentFacingMode);
 });
 
+// --- SİZİN FİKRİNİZ: TEMİZLE BUTONUNA DA 1.5 SANİYELİK KORUMA KİLİDİ EKLENDİ ---
 clearLogBtn.addEventListener('click', () => {
-    if (isWarmUpActive) return;
+    if (isWarmUpActive) return; // Zaten ısınma sürecindeyse mükerrer tıklamayı engelle
+    
     scannedCardsSet.clear(); cardLogArray = []; cardCountSpan.innerText = "0";
     lastDetectedRawCode = ""; rawCodeMatchCount = 0;
     codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-";
-    isWarmUpActive = true; isSystemLocked = true;
-    resultDiv.innerText = "Deste Sıfırlanıyor (1.5sn)..."; resultDiv.style.color = "#ff3b30";
+    
+    isWarmUpActive = true;
+    isSystemLocked = true;
+    resultDiv.innerText = "Deste Sıfırlanıyor (1.5sn)...";
+    resultDiv.style.color = "#ff3b30";
     logListDiv.innerText = "Deste sıfırlandı. Yeni kart bekleniyor..."; logListDiv.style.color = "#888";
-    setTimeout(() => { isWarmUpActive = false; isSystemLocked = false; resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; }, 1500);
+    
+    setTimeout(() => {
+        isWarmUpActive = false;
+        isSystemLocked = false;
+        resultDiv.innerText = "Kart Bekleniyor...";
+        resultDiv.style.color = "#fff";
+    }, 1500);
 });
 
 function calculateOtsuThreshold(data, width, height) {
@@ -191,18 +200,21 @@ function calculateOtsuThreshold(data, width, height) {
 </script>
 
 <script>
+// Sizin istediğiniz o köşeli parantez yapısındaki iç içe dizileri tarayan akıllı arama motoru
 function findMapDetailsForCode(binaryCode) {
     for (let cardName in JANNERSTEN_MAP) {
         const arr = JANNERSTEN_MAP[cardName];
         if (arr[0] === binaryCode) return { name: cardName, type: "Düz", dataCode: arr[0] };
-        if (arr[1] === binaryCode) return { name: cardName, type: "Ters", dataCode: arr[0] };
+        if (arr[1] === binaryCode) return { name: cardName, type: "Ters", dataCode: arr[0] }; // Her zaman ana düz kodu referans basar
     }
     return null;
 }
 
 function tick() {
     if (video.readyState >= 2) {
+        // Isınma veya sıfırlama gecikmesi aktifse kameradan gelen verileri matematiksel işlemciye sokma, pas geç!
         if (isWarmUpActive) return; 
+        
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const fullFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = fullFrame.data;
@@ -227,24 +239,22 @@ function tick() {
             if (isSystemLocked) return;
             const widths = [];
             for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
+            
+            const minW = Math.min(...widths); const maxW = Math.max(...widths);
+            if (maxW / minW < 1.8) { resetStability(); return; }
             const sum = widths.reduce((a, b) => a + b, 0); const avgWidth = sum / widths.length;
             if (avgWidth < 3.0) { resetStability(); return; }
 
             let binaryCode = "";
             for (let i = 0; i < widths.length; i++) binaryCode += (widths[i] > avgWidth) ? "1" : "0";
-
-            // --- SİZİN HARD RESET MANTILIĞINIZ: CEP İÇİN ARINDIRILMIŞ VE EN TEPEYE BAĞLANMIŞ HALİ ---
-            if (binaryCode === lastDetectedRawCode) { 
-                rawCodeMatchCount++; 
-            } else { 
-                lastDetectedRawCode = binaryCode; 
-                rawCodeMatchCount = 1; 
-            }
-
+            if (binaryCode === lastDetectedRawCode) { rawCodeMatchCount++; } 
+            else { lastDetectedRawCode = binaryCode; rawCodeMatchCount = 1; }
             if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) return;
 
             const reversedCode = binaryCode.split("").reverse().join("");
             codeFlatSpan.innerText = binaryCode; codeReverseSpan.innerText = reversedCode;
+            
+            // Köşeli parantez içindeki düz ve ters kodları aynı anda tarar
             let match = findMapDetailsForCode(binaryCode);
 
             if (match) {
@@ -253,10 +263,13 @@ function tick() {
                 }
                 resultDiv.innerText = "🎉 " + match.name; resultDiv.style.color = "#00ffcc"; playBeepSound();
                 scannedCardsSet.add(match.name); cardCountSpan.innerText = scannedCardsSet.size;
+                
+                // Teşhis log kutusuna veritabanındaki ana düz kodu ve canlı kameradan okunan o anki kararlı kodu basar
                 const logLine = `<b>${match.name}</b> (${match.type}) | Data: <span style="color:#00ffcc">${match.dataCode}</span> | Canlı: <span style="color:#ff9500">${binaryCode}</span>`;
                 cardLogArray.push(logLine);
                 logListDiv.innerHTML = cardLogArray.slice().reverse().map((line, idx) => `[${cardLogArray.length - idx}] ${line}`).join("<br>");
                 logListDiv.style.color = "#fff";
+                
                 isSystemLocked = true; resultDiv.innerText = "Lütfen Kartı Değiştirin..."; resultDiv.style.color = "#ff9500";
                 setTimeout(() => { isSystemLocked = false; resetStability(); resetToWaiting(); }, 1500);
             } else { resultDiv.innerText = "Tanımsız Kart"; resultDiv.style.color = "#ff9500"; }
@@ -267,7 +280,7 @@ function tick() {
 function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
 function resetToWaiting() {
     if (!isSystemLocked && !isWarmUpActive) { resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; }
-    debugDiv.innerText = "v7.45 Sadece Cep Sürümü";
+    debugDiv.innerText = "v7.42 Deste Modu Yayında";
 }
 startCamera(currentFacingMode);
 </script>
