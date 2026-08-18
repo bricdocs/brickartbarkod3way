@@ -1,88 +1,117 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jannersten Canlı Akıllı Tarayıcı</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jannersten Canlı Akıllı Tarayıcı v6.2</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
-            background-color: #f0f2f5;
+            background-color: #1a1a1a;
+            color: #ffffff;
             margin: 0;
-            padding: 20px;
+            padding: 15px;
+            overflow-x: hidden;
+        }
+        h2 {
+            margin: 5px 0;
+            font-size: 22px;
+            color: #00ffcc;
+        }
+        p {
+            margin: 5px 0 15px 0;
+            font-size: 14px;
+            color: #aaaaaa;
+            text-align: center;
         }
         .container {
             position: relative;
             width: 100%;
-            max-width: 500px;
+            max-width: 480px;
+            aspect-ratio: 4 / 3;
+            border: 3px solid #333;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
         }
         video {
             width: 100%;
-            border-radius: 8px;
+            height: 100%;
+            object-fit: cover;
             background: #000;
         }
-        /* Ekranın ortasındaki kılavuz çerçevesi */
+        /* Ekranın ortasındaki dinamik tarama kılavuz çizgisi */
         .guide-line {
             position: absolute;
             top: 50%;
-            left: 10%;
-            width: 80%;
-            height: 2px;
-            background-color: red;
+            left: 5%;
+            width: 90%;
+            height: 3px;
+            background-color: #ff3b30;
             transform: translateY(-50%);
             z-index: 10;
-            box-shadow: 0 0 4px rgba(255,0,0,0.8);
+            box-shadow: 0 0 8px rgba(255, 59, 48, 0.8);
+            transition: background-color 0.2s, box-shadow 0.2s;
         }
         .result-box {
-            margin-top: 20px;
+            margin-top: 15px;
             padding: 15px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            font-size: 26px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            font-size: 24px;
             font-weight: bold;
-            color: #333;
+            color: #ffffff;
             text-align: center;
             min-width: 280px;
+            letter-spacing: 1px;
         }
         .debug-info {
-            margin-top: 10px;
-            font-family: monospace;
-            font-size: 15px;
-            color: #444;
-            background: #e4e6eb;
-            padding: 8px;
-            border-radius: 4px;
+            margin-top: 15px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 13px;
+            color: #00ffcc;
+            background: #000000;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #333;
+            min-width: 280px;
+            line-height: 1.5;
         }
         canvas {
-            display: none; /* İşlemler arka planda canvas üzerinde yapılır */
+            display: none; /* Analiz arka planda gizli canvas ile yapılır */
         }
     </style>
 </head>
 <body>
 
-    <h2>Jannersten Canlı Akıllı Tarayıcı</h2>
-    <p>Kartın barkodunu ekrandaki KIRMIZI çizgiye yaklaştırın.</p>
+    <h2>Jannersten Tarayıcı v6.2</h2>
+    <p>Kartın barkodunu ekrandaki KIRMIZI çizgiye ortalayın.</p>
 
     <div class="container">
-        <video id="webcam" autoplay playsinline></video>
+        <video id="webcam" autoplay playsinline muted></video>
         <div class="guide-line" id="guide"></div>
     </div>
 
     <div class="result-box" id="result">Kart Bekleniyor...</div>
-    <div class="debug-info" id="debug">Okunan Kod: - <br>Bulunan Satır: -</div>
+    
+    <div class="debug-info" id="debug">
+        Okunan Kod: - <br>
+        Tarama Satırı (Y): Analiz Bekleniyor...<br>
+        Bulunan Çizgi Sayısı: -
+    </div>
 
     <canvas id="analyzerCanvas"></canvas>
 
 <script>
-// --- MAP SÖZLÜĞÜ (TEST İÇİN MAÇA 4'LÜSÜ EKLENDİ) ---
+// --- V6.2 GELİŞMİŞ BARKOD EŞLEŞTİRME HARİTASI (MAP) ---
 const JANNERSTEN_MAP = {
     "0101001": "Maça 4 (4 of Spades)",
-    // Kartın 180 derece ters tutulma ihtimaline karşı ters simetrisini de haritaya ekliyoruz:
-    "1001010": "Maça 4 (4 of Spades - Ters)"
+    "1001010": "Maça 4 (4 of Spades) [Ters Tutuş]" // 180 derece ters tutma toleransı
 };
 
 const video = document.getElementById('webcam');
@@ -92,48 +121,58 @@ const resultDiv = document.getElementById('result');
 const debugDiv = document.getElementById('debug');
 const guideLine = document.getElementById('guide');
 
-// Kamerayı Başlat
+// Kamerayı Yüksek Çözünürlük ve Doğru Odakla Başlat
 async function initCamera() {
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
-        });
+        const constraints = {
+            video: {
+                facingMode: "environment",
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                // Mobil cihazlarda odaklanmayı en net düzeye getirmek için
+                focusMode: "continuous"
+            }
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
         video.addEventListener('loadedmetadata', () => {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            tick(); 
+            tick(); // Canlı analiz döngüsünü ateşle
         });
     } catch (err) {
-        resultDiv.innerText = "Kamera izni verilemedi!";
-        console.error(err);
+        resultDiv.innerText = "Kamera Başlatılamadı!";
+        resultDiv.style.color = "#ff3b30";
+        console.error("Kamera Hatası:", err);
     }
 }
 
-// Sürekli Çalışan Canlı Tarama Döngüsü
+// v6.2 Kesintisiz Tarama ve Karar Döngüsü
 function tick() {
     if (video.readyState === video.HAVE_CURRENT_DATA) {
+        // Canlı kameradan anlık kareyi arka plan hafızasına (canvas) aktar
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
         const midY = Math.floor(canvas.height / 2);
         
-        // --- 1. ADIM: PYTHON'DAKİ OTOMATİK DİNAMİK SATIR TARAMASI ---
-        // Çizgilerin yapışmadığı en ideal yüksekliği bulmak için kırmızı çizginin 
-        // 50 piksel yukarısı ve 50 piksel aşağısı taranır.
         let bestY = midY;
         let maxTransitions = 0;
         let bestTransitionsArray = [];
 
-        for (let y = midY - 50; y < midY + 50; y++) {
+        // --- YENİLİK 1: PYTHON'DAKİ DİNAMİK Y-EKSENİ TARAMASI ---
+        // Çizgilerin erimediği en net orta gövdeyi bulmak için geniş bir koridor taranır
+        const scanRadius = Math.floor(canvas.height * 0.15); // Dinamik yükseklik ayarı
+        
+        for (let y = midY - scanRadius; y < midY + scanRadius; y++) {
             if (y < 0 || y >= canvas.height) continue;
             
-            // O satırdaki pikselleri oku
             const rowData = ctx.getImageData(0, y, canvas.width, 1).data;
-            const binaryRow = applyAdaptiveThreshold(rowData);
+            const binaryRow = applyAdaptiveContrastThreshold(rowData);
             const currentTransitions = getTransitions(binaryRow);
             
-            // Jannersten için ideal geçiş aralığını (7-14 arası) ara
-            if (currentTransitions.length >= 7 && currentTransitions.length <= 15) {
+            // Jannersten standartlarında 7 çizgi tam 7 veya 8 geçiş noktası üretir
+            // Çevre parazit toleransını artırmak için aralığı 6-16 yapıyoruz
+            if (currentTransitions.length >= 6 && currentTransitions.length <= 16) {
                 if (currentTransitions.length > maxTransitions) {
                     maxTransitions = currentTransitions.length;
                     bestY = y;
@@ -142,67 +181,84 @@ function tick() {
             }
         }
 
-        // --- 2. ADIM: BARKOD KODUNU ÇÖZME ---
+        // --- YENİLİK 2: DETAYLI BARKOD MATEMATİĞİ VE ANALİZİ ---
         if (bestTransitionsArray.length >= 7) {
-            // Çizgi genişliklerini piksel cinsinden ölç
+            // Siyah/Beyaz blokların piksel genişliklerini diziye doldur
             const widths = [];
             for (let i = 0; i < 7; i++) {
                 widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
             }
 
-            // Dinamik Eşik: Ortalamayı bul
+            // Python ile birebir eşleşen Dinamik Oranlama Eşiği
             const sum = widths.reduce((a, b) => a + b, 0);
             const avgWidth = sum / widths.length;
 
-            // Genişlikleri 1 ve 0'a dönüştür
+            // Genişlikler ortalamadan büyükse 1 (Geniş), küçükse 0 (Dar) bit dizisine çevrilir
             let binaryCode = "";
             for (let i = 0; i < widths.length; i++) {
                 binaryCode += (widths[i] > avgWidth) ? "1" : "0";
             }
 
-            // Map Eşleştirmesi (Düz ve Ters Kontrolü)
+            // Sözlükte (Map) tarama yap
             let foundCard = JANNERSTEN_MAP[binaryCode];
 
             if (foundCard) {
-                resultDiv.innerText = `🎉 ${foundCard}`;
-                resultDiv.style.color = "green";
-                guideLine.style.backgroundColor = "green";
+                resultDiv.innerText = foundCard;
+                resultDiv.style.color = "#00ffcc";
+                guideLine.style.backgroundColor = "#00ffcc";
+                guideLine.style.boxShadow = "0 0 12px rgba(0, 255, 204, 0.9)";
             } else {
                 resultDiv.innerText = "Tanımsız Kart";
-                resultDiv.style.color = "orange";
-                guideLine.style.backgroundColor = "orange";
+                resultDiv.style.color = "#ff9500";
+                guideLine.style.backgroundColor = "#ff9500";
+                guideLine.style.boxShadow = "0 0 12px rgba(255, 149, 0, 0.9)";
             }
-            debugDiv.innerHTML = `Okunan Kod: <b>${binaryCode}</b><br>Optimize Satır (Y): ${bestY}. piksel`;
+            
+            // Gerçek zamanlı debug paneli güncellemesi
+            debugDiv.innerHTML = `Okunan Kod: <b style="color:#fff;">${binaryCode}</b><br>` +
+                                 `Tarama Satırı (Y): ${bestY}. piksel<br>` +
+                                 `Bulunan Çizgi Sayısı: ${Math.floor(bestTransitionsArray.length / 2)}`;
 
         } else {
+            // Ekranda kart yoksa bekleme moduna dön
             resultDiv.innerText = "Kart Bekleniyor...";
-            resultDiv.style.color = "#333";
-            guideLine.style.backgroundColor = "red";
-            debugDiv.innerHTML = `Okunan Kod: - <br>Optimize Satır (Y): Tarama Yapılıyor...`;
+            resultDiv.style.color = "#ffffff";
+            guideLine.style.backgroundColor = "#ff3b30";
+            guideLine.style.boxShadow = "0 0 8px rgba(255, 59, 48, 0.8)";
+            debugDiv.innerHTML = `Okunan Kod: - <br>` +
+                                 `Tarama Satırı (Y): Çizgi Aranıyor...<br>` +
+                                 `Bulunan Çizgi Sayısı: 0`;
         }
     }
+    // Mobil performansı için tarayıcının en optimize kare yenileme hızına bağlan
     requestAnimationFrame(tick);
 }
 
-// Gelişmiş JavaScript Gri Ton + Dinamik Eşikleme (CLAHE/Otsu Alternatifi)
-function applyAdaptiveThreshold(rgbaData) {
-    const binaryPixels = [];
-    // Hızlı işlem için pikselleri teker teker dolaşır
+// v6.2 Yerel Kontrast Filtresi (Çizgilerin yapışmasını engeller)
+function applyAdaptiveContrastThreshold(rgbaData) {
+    const grayPixels = [];
+    let minGray = 255;
+    let maxGray = 0;
+
+    // Satırdaki pikselleri analiz edip ışık sınırlarını bulur
     for (let i = 0; i < rgbaData.length; i += 4) {
-        const r = rgbaData[i];
-        const g = rgbaData[i+1];
-        const b = rgbaData[i+2];
-        
-        // İnsan gözüne duyarlı gri ton dönüşümü
-        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-        
-        // 130 Değeri yapışmayı önleyen güvenli bir orta filtredir
-        binaryPixels.push(gray < 130 ? 0 : 1); // 0: Siyah (Çizgi), 1: Beyaz
+        const gray = 0.299 * rgbaData[i] + 0.587 * rgbaData[i+1] + 0.114 * rgbaData[i+2];
+        grayPixels.push(gray);
+        if (gray < minGray) minGray = gray;
+        if (gray > maxGray) maxGray = gray;
+    }
+
+    // Ortam ışığına göre dinamik bir orta kesim eşiği (Otsu simülasyonu) oluşturur
+    const dynamicThreshold = (minGray + maxGray) / 2;
+
+    const binaryPixels = [];
+    for (let i = 0; i < grayPixels.length; i++) {
+        binaryPixels.push(grayPixels[i] < dynamicThreshold ? 0 : 1);
     }
     return binaryPixels;
 }
 
-// Renk geçiş noktalarının indekslerini bulan yardımcı fonksiyon
+// Piksellerdeki renk kırılma (geçiş) indekslerini yakalayan motor
 function getTransitions(pixels) {
     const trans = [];
     for (let i = 0; i < pixels.length - 1; i++) {
@@ -213,7 +269,7 @@ function getTransitions(pixels) {
     return trans;
 }
 
-// Uygulamayı Başlat
+// Sistemi Başlat
 initCamera();
 </script>
 </body>
