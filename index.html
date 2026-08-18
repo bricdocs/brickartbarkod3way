@@ -3,14 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Keskin ve Hafif v7.15</title>
+    <title>Jannersten Kararlı Filtre v7.16</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
         
         .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
-        
-        /* Video arka planda gizli kalacak, ekranı hafif canvas ile siyah beyaz çizeceğiz */
         video { display: none; } 
         #displayCanvas { width: 100%; height: 100%; object-fit: cover; background: #000; }
         
@@ -46,7 +44,7 @@
 </head>
 <body>
 
-    <h2>Jannersten v7.15 (Hafif Siyah-Beyaz)</h2>
+    <h2>Jannersten v7.16 (Kararlı Tarama)</h2>
     
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
@@ -54,7 +52,7 @@
     </div>
 
     <div class="slider-box">
-        <label for="threshSlider">Işık Dengesi Hassasiyeti: <span id="threshVal">110</span></label><br>
+        <label for="threshSlider">Işık Filtre Ayarı: <span id="threshVal">110</span></label><br>
         <input type="range" id="threshSlider" min="60" max="160" value="110">
     </div>
 
@@ -71,7 +69,7 @@
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
 
-    <div class="debug-info" id="debug">İşlemci Koruma Modu: Aktif</div>
+    <div class="debug-info" id="debug">Kararlılık Filtresi: Aktif</div>
 
 <script>
 const JANNERSTEN_MAP = {
@@ -104,6 +102,11 @@ let isRunning = false;
 let scannedCardsSet = new Set(); 
 let isSystemLocked = false;       
 let consecutiveEmptyFrames = 0;   
+
+// --- v7.16 ZAMAN TABANLI ARDIŞIK DOĞRULAMA HAFIZASI ---
+let lastScannedRawCode = "";      // En son okunan ham binary dizi
+let rawCodeMatchCount = 0;        // Aynı kodun üst üste kaç kare boyunca okunduğunun sayacı
+const STABILITY_REQUIRED_FRAMES = 5; // Onaylanması için kodun kesintisiz 5 kare (saniyenin 5'te 1'i) boyunca sabit kalması şartı
 
 threshSlider.addEventListener('input', (e) => {
     globalThreshold = parseInt(e.target.value);
@@ -156,6 +159,8 @@ clearLogBtn.addEventListener('click', () => {
     logListDiv.style.color = "#888";
     isSystemLocked = false;
     consecutiveEmptyFrames = 0;
+    lastScannedRawCode = "";
+    rawCodeMatchCount = 0;
     resetToWaiting();
 });
 
@@ -167,7 +172,6 @@ function loop() {
 
 function tick() {
     if (video.readyState >= 2) {
-        // Ham görüntüyü arka plana çiz
         ctx.drawImage(video, 0, 0, displayCanvas.width, displayCanvas.height);
         
         const fullFrame = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
@@ -178,7 +182,7 @@ function tick() {
         let bestTransitionsArray = [];
         let bestYFound = midY;
 
-        // --- OPTİMİZASYON: 4'er piksel atlayarak işlemci yükünü %50 düşürüyoruz (Isınma Engeli) ---
+        // Optimize edilmiş 4-piksel aralıklı tünel taraması
         for (let y = midY - 30; y < midY + 30; y += 4) {
             const binaryRow = [];
             for (let x = 0; x < displayCanvas.width; x++) {
@@ -207,17 +211,17 @@ function tick() {
             }
         }
 
-        // --- YENİLİK: Ekranı dondurmadan, pikselleri yapay olarak siyah beyaz boyama motoru ---
+        // Ekranı yapay siyah-beyaz boyama motoru
         for (let i = 0; i < data.length; i += 4) {
             const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
             const bw = gray < globalThreshold ? 0 : 255;
-            data[i] = bw;     // R
-            data[i+1] = bw;   // G
-            data[i+2] = bw;   // B
+            data[i] = bw;
+            data[i+1] = bw;
+            data[i+2] = bw;
         }
         ctx.putImageData(fullFrame, 0, 0);
 
-        // Kod Çözme İşlemleri
+        // Kod Doğrulama Aşaması
         if (bestTransitionsArray.length >= 7) {
             const widths = [];
             for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
@@ -225,9 +229,9 @@ function tick() {
             const sum = widths.reduce((a, b) => a + b, 0);
             const avgWidth = sum / widths.length;
 
-            if (avgWidth < 3.5 || avgWidth > 26) {
-                consecutiveEmptyFrames++;
-                if (consecutiveEmptyFrames > 8) { isSystemLocked = false; resetToWaiting(); }
+            // Havada el titremesi parazitlerini eleyen boyut süzgeci
+            if (avgWidth < 4.0 || avgWidth > 25) {
+                handleEmptyFrame();
                 return;
             }
 
@@ -244,6 +248,21 @@ function tick() {
                 binaryCode += (widths[i] > avgWidth) ? "1" : "0";
             }
 
+            // --- v7.16 EN KRİTİK ADIM: ARDIŞIK ZAMAN DOĞRULAMA FİLTRESİ ---
+            if (binaryCode === lastScannedRawCode) {
+                rawCodeMatchCount++; // Kod bir önceki kareyle aynıysa sayacı artır
+            } else {
+                lastScannedRawCode = binaryCode; // Kod değiştiyse yeni kodu kaydet ve sayacı sıfırla
+                rawCodeMatchCount = 1;
+            }
+
+            // Kod ardışık olarak hedeflenen kare sayısı boyunca sabit kalmadıysa tespiti askıya al
+            if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) {
+                debugDiv.innerText = `Kod Süzülüyor... (${rawCodeMatchCount}/${STABILITY_REQUIRED_FRAMES})`;
+                return;
+            }
+
+            // Kararlılık sağlandıysa artık kartı sözlükte ara
             let foundCard = JANNERSTEN_MAP[binaryCode];
 
             if (foundCard) {
@@ -269,14 +288,20 @@ function tick() {
                 resultDiv.innerText = "Tanımsız Kart";
                 resultDiv.style.color = "#ff9500";
             }
-            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Genişlik: ${avgWidth.toFixed(1)}px | Kod: ${binaryCode}`;
+            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Kararlı Kod: ${binaryCode}`;
         } else {
-            consecutiveEmptyFrames++;
-            if (consecutiveEmptyFrames > 10) {
-                isSystemLocked = false; 
-                resetToWaiting();
-            }
+            handleEmptyFrame();
         }
+    }
+}
+
+function handleEmptyFrame() {
+    consecutiveEmptyFrames++;
+    if (consecutiveEmptyFrames > 8) {
+        isSystemLocked = false; 
+        lastScannedRawCode = "";
+        rawCodeMatchCount = 0;
+        resetToWaiting();
     }
 }
 
@@ -285,7 +310,7 @@ function resetToWaiting() {
         resultDiv.innerText = "Kart Bekleniyor...";
         resultDiv.style.color = "#fff";
     }
-    debugDiv.innerText = "Hafif Motor: Kart Aranıyor...";
+    debugDiv.innerText = "Kararlılık Filtresi: Aktif | Hayaletler Engellendi";
 }
 
 startCamera(currentFacingMode);
