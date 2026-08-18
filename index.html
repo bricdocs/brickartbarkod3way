@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Otsu v7.39</title>
+    <title>Jannersten Profesyonel v7.40</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -27,7 +27,7 @@
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.39 (Oran Kontrollü)</h2>
+    <h2>Jannersten v7.40 (Köşeli Deste Modu)</h2>
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
@@ -50,21 +50,30 @@
         <div class="log-title">Teşhis Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
-    <div class="debug-info" id="debug">v7.39 Oran Kontrolü Aktif</div>
+    <div class="debug-info" id="debug">Köşeli Harita Motoru Aktif</div>
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
+// --- v7.40 SİZİNLE BERABER DOĞRULANAN YENİ KÖŞELİ PARANTEZ HARİTASI ---
 const JANNERSTEN_MAP = {
-    "0101001": "Maça 4", "1001010": "Maça 4",
-    "0101100": "Maça 5", "0011010": "Maça 5",
-    "0011100": "Maça 6", 
-    "0100111": "Sinek 10", "1110010": "Sinek 10",
-    "0101000": "Sinek 6", "0001010": "Sinek 6",
-    "0100010": "Sinek 5 / Kupa 10", 
-    "0101010": "Karo Kız", 
-    "0101110": "Karo 4", "0111010": "Karo 4",
-    "0000101": "Kupa Kız", "1010000": "Kupa Kız",
-    "0111100": "Kupa 9", "0011110": "Kupa 9"
+    // --- MAÇA SERİSİ (Spades - S) ---
+    "S4": ["0101001", "1001010"],
+    "S5": ["0101100", "0011010"],
+    "S6": ["0011100", "0011100"], // Simetrik
+
+    // --- SİNEK SERİSİ (Clubs - C) ---
+    "C10": ["0100111", "1110010"],
+    "C6": ["0011011", "1101100"], // Yeni kararlı kodunuz işlendi
+    "C5": ["0111110", "0111110"], // Yeni simetrik kararlı kodunuz işlendi
+
+    // --- KARO SERİSİ (Diamonds - D) ---
+    "DK": ["0101010", "0101010"], // Simetrik
+    "D4": ["0101110", "0111010"],
+
+    // --- KUPA SERİSİ (Hearts - H) ---
+    "HK": ["0000101", "1010000"], // Kupa King olarak milimetrik düzeltildi
+    "H9": ["0111100", "0011110"],
+    "HT": ["0100001", "1000010"]  // Kupa 10 (Heart Ten) kararlı kodunuz işlendi
 };
 
 const video = document.getElementById('webcam');
@@ -149,14 +158,19 @@ function calculateOtsuThreshold(data, width, height) {
     }
     return threshold;
 }
-
-function findMapBinaryForCard(cardName) {
-    for (let key in JANNERSTEN_MAP) { if (JANNERSTEN_MAP[key] === cardName) return key; }
-    return "------";
-}
 </script>
 
 <script>
+// Yeni parantez yapısında aranan kartın hangi yönde basıldığını bulan akıllı teşhis fonksiyonu
+function findMapDetailsForCode(binaryCode) {
+    for (let cardName in JANNERSTEN_MAP) {
+        const arr = JANNERSTEN_MAP[cardName];
+        if (arr[0] === binaryCode) return { name: cardName, type: "Düz", dataCode: arr[0] };
+        if (arr[1] === binaryCode) return { name: cardName, type: "Ters", dataCode: arr[0] };
+    }
+    return null;
+}
+
 function tick() {
     if (video.readyState >= 2) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -199,17 +213,19 @@ function tick() {
 
             const reversedCode = binaryCode.split("").reverse().join("");
             codeFlatSpan.innerText = binaryCode; codeReverseSpan.innerText = reversedCode;
-            let foundCard = JANNERSTEN_MAP[binaryCode];
 
-            if (foundCard) {
-                if (scannedCardsSet.has(foundCard)) {
-                    resultDiv.innerText = `${foundCard} (Zaten Okundu)`; resultDiv.style.color = "#ff3b30"; resetStability(); return;
+            // v7.40 YENİLİK: Köşeli parantez içindeki hem 0. hem de 1. elemanı tek seferde tarar
+            let match = findMapDetailsForCode(binaryCode);
+
+            if (match) {
+                if (scannedCardsSet.has(match.name)) {
+                    resultDiv.innerText = `${match.name} (Zaten Okundu)`; resultDiv.style.color = "#ff3b30"; resetStability(); return;
                 }
-                resultDiv.innerText = "🎉 " + foundCard; resultDiv.style.color = "#00ffcc"; playBeepSound();
-                scannedCardsSet.add(foundCard); cardCountSpan.innerText = scannedCardsSet.size;
+                resultDiv.innerText = "🎉 " + match.name; resultDiv.style.color = "#00ffcc"; playBeepSound();
+                scannedCardsSet.add(match.name); cardCountSpan.innerText = scannedCardsSet.size;
                 
-                const dataBinary = findMapBinaryForCard(foundCard);
-                const logLine = `<b>${foundCard}</b> | Data: <span style="color:#00ffcc">${dataBinary}</span> | Canlı: <span style="color:#ff9500">${binaryCode}</span>`;
+                // Teşhis satırına her zaman haritadaki ana düz kodu ve o an kameradan canlı okunan kodu basar
+                const logLine = `<b>${match.name}</b> (${match.type}) | Data: <span style="color:#00ffcc">${match.dataCode}</span> | Canlı: <span style="color:#ff9500">${binaryCode}</span>`;
                 cardLogArray.push(logLine);
                 logListDiv.innerHTML = cardLogArray.slice().reverse().map((line, idx) => `[${cardLogArray.length - idx}] ${line}`).join("<br>");
                 logListDiv.style.color = "#fff";
@@ -220,13 +236,13 @@ function tick() {
                 resultDiv.innerText = "Tanımsız Kart"; resultDiv.style.color = "#ff9500";
             }
             debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound}`;
-        } else {  resetStability(); }
+        } else { resetStability(); }
     }
 }
 function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
 function resetToWaiting() {
     if (!isSystemLocked) { resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; }
-    debugDiv.innerText = "v7.39 Temiz Sürüm";
+    debugDiv.innerText = "v7.40 Köşeli Deste Yapısı Aktif";
 }
 startCamera(currentFacingMode);
 </script>
