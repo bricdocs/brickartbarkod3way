@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Kesin Çözüm v7.38</title>
+    <title>Jannersten Otsu v7.39</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -27,7 +27,7 @@
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.38 (Oran Filtreli)</h2>
+    <h2>Jannersten v7.39 (Oran Kontrollü)</h2>
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
@@ -50,7 +50,7 @@
         <div class="log-title">Teşhis Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
-    <div class="debug-info" id="debug">Akıllı Geometri Oran süzgeci Aktif</div>
+    <div class="debug-info" id="debug">v7.39 Oran Kontrolü Aktif</div>
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
@@ -127,10 +127,7 @@ clearLogBtn.addEventListener('click', () => {
     logListDiv.innerText = "Deste sıfırlandı. Yeni kart bekleniyor..."; logListDiv.style.color = "#888";
     isSystemLocked = false; lastDetectedRawCode = ""; rawCodeMatchCount = 0; resetToWaiting();
 });
-</script>
 
-<script>
-<script>
 function calculateOtsuThreshold(data, width, height) {
     let histogram = new Array(256).fill(0); let totalPixels = 0;
     for (let y = 40; y < 270; y += 2) {
@@ -157,7 +154,9 @@ function findMapBinaryForCard(cardName) {
     for (let key in JANNERSTEN_MAP) { if (JANNERSTEN_MAP[key] === cardName) return key; }
     return "------";
 }
+</script>
 
+<script>
 function tick() {
     if (video.readyState >= 2) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -185,7 +184,6 @@ function tick() {
             const widths = [];
             for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
             
-            // --- v7.38 GEOMETRİK ÇİZGİ ORAN SÜZGECİ (YAZIM HATASI DÜZELTİLDİ) ---
             const minW = Math.min(...widths); const maxW = Math.max(...widths);
             if (maxW / minW < 1.8) { resetStability(); return; }
 
@@ -222,16 +220,15 @@ function tick() {
                 resultDiv.innerText = "Tanımsız Kart"; resultDiv.style.color = "#ff9500";
             }
             debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound}`;
-        } else { resetStability(); }
+        } else {  resetStability(); }
     }
 }
 function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
 function resetToWaiting() {
     if (!isSystemLocked) { resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; }
-    debugDiv.innerText = "v7.38 Oran Kontrollü Sürüm";
+    debugDiv.innerText = "v7.39 Temiz Sürüm";
 }
 startCamera(currentFacingMode);
 </script>
 </body>
 </html>
-
