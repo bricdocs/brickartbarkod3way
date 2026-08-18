@@ -66,6 +66,31 @@
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
+const JANNERSTEN_MAP = {
+    // --- SON MESAJLARDAKİ MAÇA SERİSİ (Spades) ---
+    "S3": ["0001110", "0111000"],
+    "S9": ["0110000", "0000110"], // H3 ile aynı barkod koduna sahip
+    "SJ": ["0110001", "1000110"],
+    "SK": ["0101000", "0001010"], // C6-D10-H5-D7 grubuyla ortak barkod
+
+    // --- SON MESAJLARDAKİ SİNEK SERİSİ (Clubs) ---
+    "C8": ["0100111", "1110010"],
+    "C6": ["0011011", "1101100"],
+    "C5": ["0111110", "0111110"], // Tam Simetrik kart
+
+    // --- SON MESAJLARDAKİ KARO SERİSİ (Diamonds) ---
+    "D10": ["0101000", "0001010"], // C6-SK-H5-D7 grubuyla ortak barkod
+    "D9": ["0101100", "0011010"],  // H3 ile aynı barkod koduna sahip
+    "D7": ["0001010", "0101000"], // C6-SK-D10-H5 grubuyla ortak barkod
+    "D6": ["0100000", "0000010"],
+
+    // --- SON MESAJLARDAKİ KUPA SERİSİ (Hearts) ---
+    "H5": ["0001010", "0101000"], // C6-SK-D10-D7 grubuyla ortak barkod
+    "H3": ["0101100", "0011010"], // D9 ile aynı barkod koduna sahip
+    "HQ": ["0000011", "1100000"]
+};
+
+
 const video = document.getElementById('webcam');
 const canvas = document.getElementById('analyzerCanvas');
 const ctx = canvas.getContext('2d');
