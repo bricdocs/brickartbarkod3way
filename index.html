@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jannersten Profesyonel Tarayıcı v8.0</title>
+    <style>
+        body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
+        h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
+        
+        .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
+        video { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(4) brightness(0.9); }
+        .guide-line { position: absolute; top: 50%; left: 0; width: 100%; height: 3px; background: #ff3b30; transform: translateY(-50%); z-index: 10; }
+        
+        .control-panel { display: flex; justify-content: center; gap: 10px; margin: 10px auto; max-width: 400px; }
+        button { padding: 10px 15px; border: none; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; }
+        .btn-cam { background: #00ffcc; color: #000; }
+        .btn-clear { background: #ff3b30; color: #fff; }
+        
+        /* Işık Tolerans Çubuğu */
+        .slider-box { margin: 10px auto; max-width: 350px; background: #222; padding: 8px; border-radius: 8px; border: 1px solid #444; font-size: 13px; color: #aaa; }
+        .slider-box input { width: 80%; accent-color: #00ffcc; }
+
+        .result-box { margin: 5px auto; padding: 10px; background: #1e1e1e; border-radius: 8px; font-size: 20px; font-weight: bold; width: 280px; border: 1px solid #333; }
+        
+        /* Okunan Kartlar Hafıza Paneli */
+        .log-container { margin: 10px auto; max-width: 350px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; text-align: left; }
+        .log-title { font-size: 12px; color: #00ffcc; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 3px; }
+        .log-list { font-family: monospace; font-size: 14px; color: #fff; max-height: 100px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
+
+        .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #888; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <h2>Jannersten v8.0 (Saha Sürümü)</h2>
+    
+    <div class="control-panel">
+        <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
+        <button class="btn-clear" id="clearLogBtn">Listeyi Temizle</button>
+    </div>
+
+    <!-- Işık Hassasiyet Kontrolü -->
+    <div class="slider-box">
+        <label for="threshSlider">Işık Filtre Hassasiyeti: <span id="threshVal">125</span></label><br>
+        <input type="range" id="threshSlider" min="70" max="180" value="125">
+    </div>
+
+    <div class="container">
+        <video id="webcam" autoplay playsinline muted></video>
+        <div class="guide-line"></div>
+    </div>
+
+    <div class="result-box" id="result">Kart Bekleniyor...</div>
+    
+    <!-- Yenilik: Okunan Kartları Hafızada Tutan Panel -->
+    <div class="log-container">
+        <div class="log-title">Okunan Kartlar Listesi:</div>
+        <div class="log-list" id="logList">Henüz kart okunmadı.</div>
+    </div>
+
+    <div class="debug-info" id="debug">Geçiş Sayısı: 0 | Kod: -</div>
+
+    <canvas id="analyzerCanvas" style="display:none;"></canvas>
+
+<script>
+const JANNERSTEN_MAP = {
+    "0101001": "Maça 4",
+    "1001010": "Maça 4 [Ters]",
+    "0101100": "Maça 5",
+    "0011010": "Maça 5 [Ters]"
+};
+
+const video = document.getElementById('webcam');
+const canvas = document.getElementById('analyzerCanvas');
+const ctx = canvas.getContext('2d');
+const resultDiv = document.getElementById('result');
+const debugDiv = document.getElementById('debug');
+const logListDiv = document.getElementById('logList');
+const toggleCamBtn = document.getElementById('toggleCamBtn');
+const clearLogBtn = document.getElementById('clearLogBtn');
+const threshSlider = document.getElementById('threshSlider');
+const threshValSpan = document.getElementById('threshVal');
+
+canvas.width = 640;
+canvas.height = 480;
+
+let currentStream = null;
+let currentFacingMode = "environment"; 
+let lastPlayedCard = null; 
+let tickInterval = null;
+let cardLogArray = []; // Okunan kartların geçmiş listesi
+let globalThreshold = 125; // Dinamik ışık eşiği
+
+// Çubuk hareket ettikçe ışık değerini canlı güncelle
+threshSlider.addEventListener('input', (e) => {
+    globalThreshold = parseInt(e.target.value);
+    threshValSpan.innerText = globalThreshold;
+});
+
+function playBeepSound() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(950, audioCtx.currentTime); // Daha temiz bir bip tonu
+        gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.10); 
+    } catch (e) {}
+}
+
+async function startCamera(facingMode) {
+    if (currentStream) currentStream.getTracks().forEach(track => track.stop());
+    if (tickInterval) clearInterval(tickInterval);
+
+    try {
+        currentStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 640, height: 480, facingMode: facingMode }
+        });
+        video.srcObject = currentStream;
+        setTimeout(() => { tickInterval = setInterval(tick, 1000 / 30); }, 1000);
+    } catch (err) {
+        resultDiv.innerText = "Kamera Başlatılamadı!";
+    }
+}
+
+toggleCamBtn.addEventListener('click', () => {
+    currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+    startCamera(currentFacingMode);
+});
+
+// Listeyi Temizleme Butonu Fonksiyonu
+clearLogBtn.addEventListener('click', () => {
+    cardLogArray = [];
+    logListDiv.innerText = "Liste temizlendi. Yeni kart bekleniyor...";
+    logListDiv.style.color = "#888";
+    lastPlayedCard = null;
+});
+
+function tick() {
+    if (video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const midY = 240;
+        const fullFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = fullFrame.data;
+
+        const binaryRow = [];
+        for (let x = 0; x < canvas.width; x++) {
+            const pixelIndex = (midY * canvas.width + x) * 4;
+            const r = data[pixelIndex];
+            const g = data[pixelIndex + 1];
+            const b = data[pixelIndex + 2];
+            
+            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+            // Canlı ayarlanan slider değerini kullanıyoruz
+            binaryRow.push(gray < globalThreshold ? 0 : 1);
+        }
+
+        const trans = [];
+        const startX = Math.floor(canvas.width * 0.15);
+        const endX = Math.floor(canvas.width * 0.85);
+        
+        for (let i = startX; i < endX; i++) {
+            if (binaryRow[i] !== binaryRow[i+1]) trans.push(i);
+        }
+
+        // --- 1. SORUNUN ÇÖZÜMÜ: EKRENDA KART YOKKEN BİPLEMEYİ ENGELLEYEN FİLTRE ---
+        // Jannersten standartlarında 7 çizgi en az 7 en fazla 14 dikey kırılma (geçiş) üretir.
+        // Eğer geçiş sayısı bu aralıkta değilse, ortada kart yoktur, işlemleri durdur.
+        if (trans.length >= 7 && trans.length <= 15) {
+            const widths = [];
+            for (let i = 0; i < 7; i++) {
+                widths.push(trans[i+1] - trans[i]);
+            }
+
+            const sum = widths.reduce((a, b) => a + b, 0);
+            const avgWidth = sum / widths.length;
+
+            // GÜVENLİK KİLİDİ 2: Çizgilerin ortalama piksel kalınlığı çok küçükse (parazitse) iptal et
+            if (avgWidth < 2) {
+                resetToWaiting();
+                return;
+            }
+
+            let binaryCode = "";
+            for (let i = 0; i < widths.length; i++) {
+                binaryCode += (widths[i] > avgWidth) ? "1" : "0";
+            }
+
+            let foundCard = JANNERSTEN_MAP[binaryCode];
+
+            if (foundCard) {
+                resultDiv.innerText = "🎉 " + foundCard;
+                resultDiv.style.color = "#00ffcc";
+                
+                // Başarılı Tarama & Hafızaya Ekleme Mantığı
+                if (lastPlayedCard !== foundCard) {
+                    playBeepSound();
+                    lastPlayedCard = foundCard;
+                    
+                    // Listeye ekle (Aynı kartın üst üste listeyi doldurmasını engeller)
+                    cardLogArray.push(foundCard);
+                    // Listeyi ekranda güncelle (En yeni okunan en üstte görünsün diye ters çevirip basıyoruz)
+                    logListDiv.innerHTML = cardLogArray.slice().reverse().map((c, idx) => `[${cardLogArray.length - idx}] ${c}`).join("<br>");
+                    logListDiv.style.color = "#fff";
+                }
+            } else {
+                resultDiv.innerText = "Tanımsız Kart";
+                resultDiv.style.color = "#ff9500";
+                lastPlayedCard = null; // Tanımsız karta düşerse ses kilidini aç (yeni kart için)
+            }
+            
+            debugDiv.innerText = `Geçiş: ${trans.length} | Kod: ${binaryCode}`;
+        } else {
+            resetToWaiting();
+        }
+    }
+}
+
+// Kart olmadığında arayüzü temizleyen yardımcı fonksiyon
+function resetToWaiting() {
+    resultDiv.innerText = "Kart Bekleniyor...";
+    resultDiv.style.color = "#fff";
+    lastPlayedCard = null; 
+    debugDiv.innerText = "Geçiş: 0 | Kod: -";
+}
+
+startCamera(currentFacingMode);
+</script>
+</body>
+</html>
