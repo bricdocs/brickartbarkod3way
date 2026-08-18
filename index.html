@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Kesin Çözüm v7.20</title>
+    <title>Jannersten Kesin Çözüm v7.21</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -17,10 +17,9 @@
             filter: grayscale(1) contrast(5) brightness(0.9); 
         }
         
-        /* v7.19'da çok beğendiğiniz geniş üst tünel tasarımı aynen korundu */
         .guide-line { 
             position: absolute; 
-            top: 5%; 
+            top: 50%; 
             left: 0; 
             width: 100%; 
             height: 216px; 
@@ -49,7 +48,7 @@
 </head>
 <body>
 
-    <h2>Jannersten v7.20 (Zaman Kilitli)</h2>
+    <h2>Jannersten v7.21 (Kararlılık Süzgeçli)</h2>
     
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
@@ -73,7 +72,7 @@
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
 
-    <div class="debug-info" id="debug">Zaman Kilit Motoru Aktif</div>
+    <div class="debug-info" id="debug">Kararlılık Motoru Aktif</div>
 
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
@@ -106,7 +105,12 @@ let globalThreshold = 115;
 let tickInterval = null;
 
 let scannedCardsSet = new Set(); 
-let isSystemLocked = false; // Kod hafızasındaki ana kilit mekanizması
+let isSystemLocked = false; 
+
+// --- v7.21 1. SEÇENEK: ZAMAN TABANLI ARDIŞIK DOĞRULAMA DEĞİŞKENLERİ ---
+let lastDetectedRawCode = "";     // En son okunan ham binary dizi
+let rawCodeMatchCount = 0;        // Aynı kodun üst üste kaç kare boyunca okunduğunun sayacı
+const STABILITY_REQUIRED_FRAMES = 5; // Onaylanması için kodun kesintisiz 5 kare boyunca birebir aynı kalması şartı
 
 threshSlider.addEventListener('input', (e) => {
     globalThreshold = parseInt(e.target.value);
@@ -157,6 +161,8 @@ clearLogBtn.addEventListener('click', () => {
     logListDiv.innerText = "Deste sıfırlandı. Yeni kart bekleniyor...";
     logListDiv.style.color = "#888";
     isSystemLocked = false;
+    lastDetectedRawCode = "";
+    rawCodeMatchCount = 0;
     resetToWaiting();
 });
 
@@ -172,7 +178,6 @@ function tick() {
         let bestTransitionsArray = [];
         let bestYFound = 240;
 
-        // v7.19'daki o çok kararlı çalışan geniş tarama tünel sınırları (40 - 270) aynen korundu
         for (let y = 40; y < 270; y += 2) {
             const binaryRow = [];
             for (let x = 0; x < canvas.width; x++) {
@@ -202,7 +207,6 @@ function tick() {
         }
 
         if (bestTransitionsArray.length >= 7) {
-            // Eğer sistem bir önceki karttan dolayı kilitliyse, tarayıcıyı yorma, pas geç
             if (isSystemLocked) {
                 return;
             }
@@ -214,6 +218,7 @@ function tick() {
             const avgWidth = sum / widths.length;
 
             if (avgWidth < 3.0) {
+                resetStability(); // Kod Jannersten boyutunda değilse sayacı sıfırla
                 return;
             }
 
@@ -222,12 +227,28 @@ function tick() {
                 binaryCode += (widths[i] > avgWidth) ? "1" : "0";
             }
 
+            // --- v7.21 DEĞİŞİKLİĞİ: 1. SEÇENEK KARARLILIK SÜZGECİ MATEMATİĞİ ---
+            if (binaryCode === lastDetectedRawCode) {
+                rawCodeMatchCount++; // Kod bir önceki kareyle tıpatıp aynıysa sayacı artır
+            } else {
+                lastDetectedRawCode = binaryCode; // Kod milisaniyelik değiştiyse (gölgeyse) yeni kodu al ve sayacı sıfırla
+                rawCodeMatchCount = 1;
+            }
+
+            // Eğer kod üst üste hedeflenen kare sayısı kadar (5 kare) sabit kalmadıysa onaylama, es geç!
+            if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) {
+                debugDiv.innerText = `Sinyal Filtreleniyor... (${rawCodeMatchCount}/${STABILITY_REQUIRED_FRAMES})`;
+                return;
+            }
+
+            // Kesintisiz 5 kare kararlılık sağlandıysa artık kartı sözlükte ara
             let foundCard = JANNERSTEN_MAP[binaryCode];
 
             if (foundCard) {
                 if (scannedCardsSet.has(foundCard)) {
                     resultDiv.innerText = `${foundCard} (Zaten Okundu)`;
                     resultDiv.style.color = "#ff3b30";
+                    resetStability();
                     return;
                 }
 
@@ -242,15 +263,13 @@ function tick() {
                 logListDiv.innerHTML = logArray.slice().reverse().map((c, idx) => `[${logArray.length - idx}] ${c}`).join("<br>");
                 logListDiv.style.color = "#fff";
                 
-                // --- v7.20 EN BÜYÜK DEĞİŞİKLİK: ZAMAN TABANLI OTOMATİK KİLİT SİSTEMİ ---
-                // Kart başarıyla okunduğu an sistemi hemen kilitliyoruz.
                 isSystemLocked = true;
                 resultDiv.innerText = "Lütfen Kartı Değiştirin...";
                 resultDiv.style.color = "#ff9500";
 
-                // Tam 1.5 saniye (1500 ms) sonra ekranın durumuna bakmaksızın kilidi zorla açıyoruz.
                 setTimeout(() => {
                     isSystemLocked = false;
+                    resetStability();
                     resetToWaiting();
                 }, 1500);
                 
@@ -258,9 +277,18 @@ function tick() {
                 resultDiv.innerText = "Tanımsız Kart";
                 resultDiv.style.color = "#ff9500";
             }
-            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound} | Kod: ${binaryCode}`;
+            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound} | Kararlı Kod: ${binaryCode}`;
+        } else {
+            // Ekranda kriterlere uygun hiçbir çizgi yoksa kararlılık sayacını sıfırla
+            resetStability();
         }
     }
+}
+
+// Kararlılık hafızasını sıfırlayan yardımcı fonksiyon
+function resetStability() {
+    lastDetectedRawCode = "";
+    rawCodeMatchCount = 0;
 }
 
 function resetToWaiting() {
@@ -268,7 +296,7 @@ function resetToWaiting() {
         resultDiv.innerText = "Kart Bekleniyor...";
         resultDiv.style.color = "#fff";
     }
-    debugDiv.innerText = "Zaman Kilit Motoru v7.20 Aktif";
+    debugDiv.innerText = "Kararlılık Motoru v7.21 Aktif";
 }
 
 startCamera(currentFacingMode);
