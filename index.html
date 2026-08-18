@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jannersten Map Test v7.51</title>
+    <style>
+        body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
+        h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
+        .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
+        video { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(5) brightness(0.9); }
+        .guide-line { position: absolute; top: 50%; left: 0; width: 100%; height: 0; border-top: 2px dashed #00ffcc; box-shadow: 0 0 8px rgba(0, 255, 204, 0.5); z-index: 10; }
+        .control-panel { display: flex; justify-content: center; gap: 10px; margin: 10px auto; max-width: 400px; }
+        button { padding: 10px 15px; border: none; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; }
+        .btn-cam { background: #00ffcc; color: #000; }
+        .btn-clear { background: #ff3b30; color: #fff; }
+        .btn-save { background: #34c759; color: #fff; width: 280px; font-size: 16px; padding: 12px; margin: 8px auto; display: block; border-radius: 10px; box-shadow: 0 0 10px rgba(52, 199, 89, 0.4); }
+        .btn-save:active { background: #248a3d; transform: scale(0.98); }
+        .slider-box { margin: 10px auto; max-width: 350px; background: #222; padding: 8px; border-radius: 8px; border: 1px solid #444; font-size: 13px; color: #aaa; }
+        .slider-box input { width: 80%; accent-color: #00ffcc; }
+        .result-box { margin: 5px auto; padding: 10px; background: #1e1e1e; border-radius: 8px; font-size: 20px; font-weight: bold; width: 280px; border: 1px solid #333; }
+        .code-display-box { margin: 10px auto; max-width: 320px; background: #000; border: 2px solid #444; border-radius: 10px; padding: 12px; font-family: 'Courier New', Courier, monospace; font-size: 18px; font-weight: bold; line-height: 1.8; text-align: center; }
+        .code-row { user-select: all; -webkit-user-select: all; color: #ffffff; background: #222; padding: 4px 10px; border-radius: 5px; display: inline-block; margin: 4px 0; letter-spacing: 2px; }
+        .code-label { font-size: 13px; color: #888; display: block; margin-top: 5px; }
+        .log-container { margin: 10px auto; max-width: 350px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; text-align: left; }
+        .log-title { font-size: 12px; color: #00ffcc; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 3px; }
+        .log-list { font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #fff; max-height: 200px; overflow-y: auto; line-height: 1.8; }
+        .log-item { background: #111; padding: 6px 8px; border-radius: 4px; margin-bottom: 4px; border: 1px solid #222; display: flex; align-items: center; justify-content: flex-start; }
+        .card-input { background: #222; border: 1px dashed #00ffcc; color: #00ffcc; font-family: monospace; font-size: 13px; font-weight: bold; width: 45px; text-align: center; padding: 1px; margin: 0 2px; border-radius: 3px; text-transform: uppercase; }
+        .card-input:focus { border-style: solid; background: #000; outline: none; }
+        .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #555; text-align: center; }
+    </style>
+</head>
+<body>
+    <h2>Jannersten v7.51 (Deste Tanıma Testi)</h2>
+    <div class="control-panel">
+        <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
+        <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
+    </div>
+    <div class="slider-box">
+        <label for="threshSlider">Otsu İnce Ayar Kaydırıcı: <span id="threshVal">1.00</span></label><br>
+        <input type="range" id="threshSlider" min="80" max="120" value="100">
+    </div>
+    <div class="container">
+        <video id="webcam" autoplay playsinline muted></video>
+        <div class="guide-line"></div>
+    </div>
+    <div class="result-box" id="result">Kamera Hazırlanıyor...</div>
+    <div class="code-display-box" id="codeDisplayBox">
+        <span class="code-label">Hatta Yakalanan Şifreler:</span>
+        <div style="margin-top:5px;">Düz: <span class="code-row" id="codeFlat">-</span></div>
+        <div>Ters: <span class="code-row" id="codeReverse">-</span></div>
+    </div>
+    <button class="btn-save" id="saveCodeBtn" disabled>Kodu Listeye Ekle</button>
+    <div class="log-container">
+        <div class="log-title">Onaylanmış Liste (Toplam: <span id="cardCount">0</span>):</div>
+        <div class="log-list" id="logList">Henüz kayıt yapılmadı.</div>
+    </div>
+    <div class="debug-info" id="debug">v7.51 Canlı Tanıma Algoritması Aktif</div>
+    <canvas id="analyzerCanvas" style="display:none;"></canvas>
+
+<script>
+// --- v7.51 CANLI TANIMA TESTİ İÇİN GÖMDÜĞÜMÜZ SON KART HARİTASI ---
+const JANNERSTEN_MAP = {
+    "S3": ["0001110", "0111000"],
+    "S9": ["0110000", "0000110"], 
+    "SJ": ["0110001", "1000110"],
+    "SK": ["0101000", "0001010"], 
+    "C8": ["0100111", "1110010"],
+    "C6": ["0011011", "1101100"],
+    "C5": ["0111110", "0111110"], 
+    "D10": ["0101000", "0001010"], 
+    "D9": ["0101100", "0011010"],  
+    "D7": ["0001010", "0101000"], 
+    "D6": ["0100000", "0000010"],
+    "H5": ["0001010", "0101000"], 
+    "H3": ["0101100", "0011010"], 
+    "HQ": ["0000011", "1100000"]
+};
+
+const video = document.getElementById('webcam');
+const canvas = document.getElementById('analyzerCanvas');
+const ctx = canvas.getContext('2d');
+const resultDiv = document.getElementById('result');
+const debugDiv = document.getElementById('debug');
+const logListDiv = document.getElementById('logList');
+const cardCountSpan = document.getElementById('cardCount');
+const toggleCamBtn = document.getElementById('toggleCamBtn');
+const clearLogBtn = document.getElementById('clearLogBtn');
+const saveCodeBtn = document.getElementById('saveCodeBtn');
+const threshSlider = document.getElementById('threshSlider');
+const threshValSpan = document.getElementById('threshVal');
+const codeFlatSpan = document.getElementById('codeFlat');
+const codeReverseSpan = document.getElementById('codeReverse');
+
+canvas.width = 640; canvas.height = 480;
+let currentStream = null; let currentFacingMode = "environment"; 
+let tickInterval = null; let otsuMultiplier = 1.0; 
+let scannedCardsSet = new Set(); let cardLogArray = []; 
+let isSystemLocked = false; let isWarmUpActive = false; 
+let lastDetectedRawCode = ""; let rawCodeMatchCount = 0;        
+const STABILITY_REQUIRED_FRAMES = 5; 
+
+let activeFlatCode = "";
+let activeReverseCode = "";
+
+threshSlider.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value); otsuMultiplier = val / 100;
+    threshValSpan.innerText = otsuMultiplier.toFixed(2);
+});
+
+function playBeepSound() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(1050, audioCtx.currentTime); 
+        gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime); oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination); oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.08); 
+    } catch (e) {}
+}
+
+async function startCamera(facingMode) {
+    if (currentStream) currentStream.getTracks().forEach(track => track.stop());
+    if (tickInterval) clearInterval(tickInterval);
+    try {
+        currentStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 640, height: 480, facingMode: facingMode }
+        });
+        video.srcObject = currentStream;
+        isWarmUpActive = true; resultDiv.innerText = "Kamera Isınıyor (1.5sn)..."; resultDiv.style.color = "#ff9500";
+        setTimeout(() => { 
+            tickInterval = setInterval(tick, 1000 / 30); isWarmUpActive = false;
+            if (!isSystemLocked) { resultDiv.innerText = "Rehber Çizgiye Hizalayın..."; resultDiv.style.color = "#fff"; }
+        }, 1500);
+    } catch (err) { resultDiv.innerText = "Kamera Başlatılamadı!"; }
+}
+
+toggleCamBtn.addEventListener('click', () => {
+    currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+    startCamera(currentFacingMode);
+});
+
+clearLogBtn.addEventListener('click', () => {
+    if (isWarmUpActive) return;
+    scannedCardsSet.clear(); cardLogArray = []; cardCountSpan.innerText = "0";
+    lastDetectedRawCode = ""; rawCodeMatchCount = 0; activeFlatCode = ""; activeReverseCode = "";
+    codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-";
+    saveCodeBtn.disabled = true; saveCodeBtn.innerText = "Kodu Listeye Ekle";
+    isWarmUpActive = true; isSystemLocked = true;
+    resultDiv.innerText = "Deste Sıfırlanıyor (1.5sn)..."; resultDiv.style.color = "#ff3b30";
+    logListDiv.innerText = "Deste sıfırlandı. Yeni kayıt bekleniyor..."; logListDiv.style.color = "#888";
+    setTimeout(() => { isWarmUpActive = false; isSystemLocked = false; resultDiv.innerText = "Rehber Çizgiye Hizalayın..."; resultDiv.style.color = "#fff"; }, 1500);
+});
+
+function calculateOtsuThreshold(data, width, height) {
+    let histogram = new Array(256).fill(0); let totalPixels = 0;
+    for (let y = 220; y < 260; y++) {
+        for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4;
+            const gray = Math.floor(0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2]);
+            histogram[gray]++; totalPixels++;
+        }
+    }
+    let sum = 0; for (let i = 0; i < 256; i++) sum += i * histogram[i];
+    let sumB = 0, wB = 0, wF = 0, varMax = 0, threshold = 115;
+    for (let i = 0; i < 256; i++) {
+        wB += histogram[i]; if (wB === 0) continue;
+        wF = totalPixels - wB; if (wF === 0) break;
+        sumB += i * histogram[i];
+        let mB = sumB / wB; let mF = (sum - sumB) / wF;
+        let varBetween = wB * wF * (mB - mF) * (mB - mF);
+        if (varBetween > varMax) { varMax = varBetween; threshold = i; }
+    }
+    return threshold;
+}
+</script>
+
+<script>
+function updateInputValue(index, value) {
+    if (cardLogArray[index]) {
+        cardLogArray[index].userTyped = value.toUpperCase();
+        renderLogList();
+    }
+}
+
+function renderLogList() {
+    let htmlContent = "";
+    for (let i = cardLogArray.length - 1; i >= 0; i--) {
+        const item = cardLogArray[i];
+        htmlContent += `
+        <div class="log-item">
+            <span>"</span>
+            <input type="text" class="card-input" value="${item.userTyped}" oninput="updateInputValue(${i}, this.value)" placeholder="Kart" maxlength="5">
+            <span>": ["${item.flatCode}", "${item.revCode}"],</span>
+        </div>`;
+    }
+    logListDiv.innerHTML = htmlContent;
+}
+
+// v7.51 Yenilik: Kodun veritabanındaki adını ve yönünü canlı bulan fonksiyon
+function checkMapMatch(binaryCode) {
+    for (let cardName in JANNERSTEN_MAP) {
+        const arr = JANNERSTEN_MAP[cardName];
+        if (arr[0] === binaryCode) return { name: cardName, type: "Düz" };
+        if (arr[1] === binaryCode) return { name: cardName, type: "Ters" };
+    }
+    return null;
+}
+
+saveCodeBtn.addEventListener('click', () => {
+    if (!activeFlatCode || isWarmUpActive) return;
+    let isAlreadySaved = cardLogArray.some(el => el.flatCode === activeFlatCode);
+    if (isAlreadySaved) { resultDiv.innerText = "Bu Kod Zaten Listede Var!"; resultDiv.style.color = "#ff3b30"; return; }
+
+    playBeepSound();
+    
+    // Eğer kart haritada kayıtlıysa ismini kutuya otomatik yazar, yoksa boş "" bırakır
+    let autoMatch = checkMapMatch(activeFlatCode);
+    let initialName = autoMatch ? autoMatch.name : "";
+
+    cardLogArray.push({
+        userTyped: initialName,
+        flatCode: activeFlatCode,
+        revCode: activeReverseCode
+    });
+    
+    cardCountSpan.innerText = cardLogArray.length;
+    renderLogList();
+    
+    isSystemLocked = true; saveCodeBtn.disabled = true; saveCodeBtn.innerText = "Başarıyla Eklendi 👍";
+    resultDiv.innerText = "Lütfen Kartı Değiştirin..."; resultDiv.style.color = "#ff9500";
+    setTimeout(() => { isSystemLocked = false; activeFlatCode = ""; activeReverseCode = ""; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; saveCodeBtn.innerText = "Kodu Listeye Ekle"; resetStability(); resetToWaiting(); }, 1500);
+});
+
+function tick() {
+    if (video.readyState >= 2) {
+        if (isWarmUpActive) return; 
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const fullFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = fullFrame.data;
+        const globalThreshold = calculateOtsuThreshold(data, canvas.width, canvas.height) * otsuMultiplier;
+        
+        let bestTransitionsArray = []; const y = 240; const binaryRow = [];
+        for (let x = 0; x < canvas.width; x++) {
+            const pixelIndex = (y * canvas.width + x) * 4;
+            const gray = 0.299 * data[pixelIndex] + 0.587 * data[pixelIndex+1] + 0.114 * data[pixelIndex+2];
+            binaryRow.push(gray < globalThreshold ? 0 : 1);
+        }
+        const trans = []; const startX = Math.floor(canvas.width * 0.15); const endX = Math.floor(canvas.width * 0.85);
+        for (let i = startX; i < endX; i++) { if (binaryRow[i] !== binaryRow[i+1]) trans.push(i); }
+        if (trans.length >= 7 && trans.length <= 15) { bestTransitionsArray = trans; }
+
+        if (bestTransitionsArray.length >= 7) {
+            if (isSystemLocked) return;
+            const widths = [];
+            for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
+            const minW = Math.min(...widths); const maxW = Math.max(...widths);
+            if (maxW / minW < 1.8) { resetStability(); return; }
+            const sum = widths.reduce((a, b) => a + b, 0); const avgWidth = sum / widths.length;
+            if (avgWidth < 3.0) { resetStability(); return; }
+
+            let binaryCode = "";
+            for (let i = 0; i < widths.length; i++) binaryCode += (widths[i] > avgWidth) ? "1" : "0";
+            if (binaryCode === lastDetectedRawCode) { rawCodeMatchCount++; } 
+            else { lastDetectedRawCode = binaryCode; rawCodeMatchCount = 1; }
+            if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) return;
+
+            const reversedCode = binaryCode.split("").reverse().join("");
+            codeFlatSpan.innerText = binaryCode; codeReverseSpan.innerText = reversedCode;
+            
+            // --- v7.51 BÜYÜK YENİLİK: ANLIK MAP EŞLEŞME DOĞRULAYICI ---
+            let match = checkMapMatch(binaryCode);
+            if (match) {
+                resultDiv.innerText = `🎉 ${match.name} (${match.type})`;
+                resultDiv.style.color = "#00ffcc";
+            } else {
+                resultDiv.innerText = "Sinyal Yakalandı 🎯";
+                resultDiv.style.color = "#ff9500";
+            }
+            
+            activeFlatCode = binaryCode; activeReverseCode = reversedCode;
+            saveCodeBtn.disabled = false;
+        } else { 
+            if (!isSystemLocked) { saveCodeBtn.disabled = true; activeFlatCode = ""; activeReverseCode = ""; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; resetStability(); resetToWaiting(); }
+        }
+    }
+}
+function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
+function resetToWaiting() {
+    if (!isSystemLocked && !isWarmUpActive) { resultDiv.innerText = "Rehber Çizgiye Hizalayın..."; resultDiv.style.color = "#fff"; }
+    debugDiv.innerText = "v7.51 Test Modu Hazır";
+}
+startCamera(currentFacingMode);
+</script>
+</body>
+</html>
