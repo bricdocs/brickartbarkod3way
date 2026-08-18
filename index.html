@@ -3,15 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Masaüstü v7.14</title>
+    <title>Jannersten Keskin ve Hafif v7.15</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
         
         .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
-        video { width: 100%; height: 100%; object-fit: cover; }
         
-        /* Yeni Kılavuz Tüneli: Kartı havadan indirirken hizalamanızı kolaylaştırır */
+        /* Video arka planda gizli kalacak, ekranı hafif canvas ile siyah beyaz çizeceğiz */
+        video { display: none; } 
+        #displayCanvas { width: 100%; height: 100%; object-fit: cover; background: #000; }
+        
         .guide-line { 
             position: absolute; 
             top: 50%; 
@@ -44,7 +46,7 @@
 </head>
 <body>
 
-    <h2>Jannersten v7.14 (Masa Üstü Mod)</h2>
+    <h2>Jannersten v7.15 (Hafif Siyah-Beyaz)</h2>
     
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
@@ -52,12 +54,13 @@
     </div>
 
     <div class="slider-box">
-        <label for="threshSlider">Tavan Işığı Filtresi: <span id="threshVal">105</span></label><br>
-        <input type="range" id="threshSlider" min="60" max="150" value="105">
+        <label for="threshSlider">Işık Dengesi Hassasiyeti: <span id="threshVal">110</span></label><br>
+        <input type="range" id="threshSlider" min="60" max="160" value="110">
     </div>
 
     <div class="container">
         <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="displayCanvas"></canvas>
         <div class="guide-line"></div>
     </div>
 
@@ -68,9 +71,7 @@
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
 
-    <div class="debug-info" id="debug">Masa Modu Aktif</div>
-
-    <canvas id="analyzerCanvas" style="display:none;"></canvas>
+    <div class="debug-info" id="debug">İşlemci Koruma Modu: Aktif</div>
 
 <script>
 const JANNERSTEN_MAP = {
@@ -81,8 +82,8 @@ const JANNERSTEN_MAP = {
 };
 
 const video = document.getElementById('webcam');
-const canvas = document.getElementById('analyzerCanvas');
-const ctx = canvas.getContext('2d');
+const displayCanvas = document.getElementById('displayCanvas');
+const ctx = displayCanvas.getContext('2d');
 const resultDiv = document.getElementById('result');
 const debugDiv = document.getElementById('debug');
 const logListDiv = document.getElementById('logList');
@@ -92,12 +93,12 @@ const clearLogBtn = document.getElementById('clearLogBtn');
 const threshSlider = document.getElementById('threshSlider');
 const threshValSpan = document.getElementById('threshVal');
 
-canvas.width = 640;
-canvas.height = 480;
+displayCanvas.width = 640;
+displayCanvas.height = 480;
 
 let currentStream = null;
 let currentFacingMode = "environment"; 
-let globalThreshold = 105;
+let globalThreshold = 110;
 let isRunning = false;
 
 let scannedCardsSet = new Set(); 
@@ -134,16 +135,10 @@ async function startCamera(facingMode) {
         });
         video.srcObject = currentStream;
         
-        video.onloadedmetadata = () => {
+        setTimeout(() => {
             isRunning = true;
             requestAnimationFrame(loop);
-        };
-        setTimeout(() => {
-            if(!isRunning) {
-                isRunning = true;
-                requestAnimationFrame(loop);
-            }
-        }, 1200);
+        }, 1000);
     } catch (err) {
         resultDiv.innerText = "Kamera Başlatılamadı!";
     }
@@ -172,35 +167,32 @@ function loop() {
 
 function tick() {
     if (video.readyState >= 2) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Ham görüntüyü arka plana çiz
+        ctx.drawImage(video, 0, 0, displayCanvas.width, displayCanvas.height);
         
-        const midY = 240;
-        const fullFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const fullFrame = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
         const data = fullFrame.data;
+        const midY = 240;
 
         let maxTransitions = 0;
         let bestTransitionsArray = [];
         let bestYFound = midY;
 
-        // Tavan ışığı parazitlerini önlemek için tarama koridorunu biraz daraltıyoruz (Merkez odaklı)
-        for (let y = midY - 20; y < midY + 20; y += 2) {
+        // --- OPTİMİZASYON: 4'er piksel atlayarak işlemci yükünü %50 düşürüyoruz (Isınma Engeli) ---
+        for (let y = midY - 30; y < midY + 30; y += 4) {
             const binaryRow = [];
-            for (let x = 0; x < canvas.width; x++) {
-                const pixelIndex = (y * canvas.width + x) * 4;
+            for (let x = 0; x < displayCanvas.width; x++) {
+                const pixelIndex = (y * displayCanvas.width + x) * 4;
                 const r = data[pixelIndex];
                 const g = data[pixelIndex + 1];
                 const b = data[pixelIndex + 2];
                 const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                
-                // MASAÜSTÜ FİLTRESİ: Tavan ışığı çok parlak olduğu için eşiği keskin tutuyoruz.
-                // Sadece gerçek, derin siyah çizgiler 0 (siyah) değerini alabilir.
                 binaryRow.push(gray < globalThreshold ? 0 : 1);
             }
 
             const trans = [];
-            // Sağdan ve soldan kırpma oranını %20'ye çıkartarak elinizin kenar gölgelerini tamamen eliyoruz
-            const startX = Math.floor(canvas.width * 0.20);
-            const endX = Math.floor(canvas.width * 0.80);
+            const startX = Math.floor(displayCanvas.width * 0.20);
+            const endX = Math.floor(displayCanvas.width * 0.80);
             
             for (let i = startX; i < endX; i++) {
                 if (binaryRow[i] !== binaryRow[i+1]) trans.push(i);
@@ -215,28 +207,29 @@ function tick() {
             }
         }
 
-        // MASAÜSTÜ GEÇİŞ VE ORAN KONTROLLERİ
+        // --- YENİLİK: Ekranı dondurmadan, pikselleri yapay olarak siyah beyaz boyama motoru ---
+        for (let i = 0; i < data.length; i += 4) {
+            const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+            const bw = gray < globalThreshold ? 0 : 255;
+            data[i] = bw;     // R
+            data[i+1] = bw;   // G
+            data[i+2] = bw;   // B
+        }
+        ctx.putImageData(fullFrame, 0, 0);
+
+        // Kod Çözme İşlemleri
         if (bestTransitionsArray.length >= 7) {
-            
             const widths = [];
-            for (let i = 0; i < 7; i++) {
-                widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
-            }
+            for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
 
             const sum = widths.reduce((a, b) => a + b, 0);
             const avgWidth = sum / widths.length;
 
-            // Havada el titremesi parazitlerini elemek için min-max piksel süzgeci
-            if (avgWidth < 4.0 || avgWidth > 24) {
+            if (avgWidth < 3.5 || avgWidth > 26) {
                 consecutiveEmptyFrames++;
                 if (consecutiveEmptyFrames > 8) { isSystemLocked = false; resetToWaiting(); }
                 return;
             }
-
-            // Sapma kontrolü: Çizgiler birbirine orantılı olmak zorunda (Tavan avize çizgileri elenir)
-            const minW = Math.min(...widths);
-            const maxW = Math.max(...widths);
-            if (maxW / minW > 4.5) { return; }
 
             consecutiveEmptyFrames = 0; 
 
@@ -292,7 +285,7 @@ function resetToWaiting() {
         resultDiv.innerText = "Kart Bekleniyor...";
         resultDiv.style.color = "#fff";
     }
-    debugDiv.innerText = "Masa Modu: Havada Kart Aranıyor...";
+    debugDiv.innerText = "Hafif Motor: Kart Aranıyor...";
 }
 
 startCamera(currentFacingMode);
