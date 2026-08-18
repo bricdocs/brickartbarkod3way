@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Tam Filtre v7.36</title>
+    <title>Jannersten Teşhis v7.37</title>
     <style>
         body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
         h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
@@ -22,12 +22,12 @@
         .code-label { font-size: 13px; color: #888; display: block; margin-top: 5px; }
         .log-container { margin: 10px auto; max-width: 350px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; text-align: left; }
         .log-title { font-size: 12px; color: #00ffcc; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 3px; }
-        .log-list { font-family: monospace; font-size: 14px; color: #fff; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .log-list { font-family: monospace; font-size: 12px; color: #fff; max-height: 140px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; line-height: 1.5; }
         .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #555; text-align: center; }
     </style>
 </head>
 <body>
-    <h2>Jannersten v7.36 (Kilitler Geri Geldi)</h2>
+    <h2>Jannersten v7.37 (İkili Binary Teşhis)</h2>
     <div class="control-panel">
         <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
         <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
@@ -47,10 +47,10 @@
         <div>Ters: <span class="code-row" id="codeReverse">-</span></div>
     </div>
     <div class="log-container">
-        <div class="log-title">Okunan Kartlar Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
+        <div class="log-title">Teşhis Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
         <div class="log-list" id="logList">Henüz kart okunmadı.</div>
     </div>
-    <div class="debug-info" id="debug">Otsu + Hafıza Kilidi Aktif</div>
+    <div class="debug-info" id="debug">Detaylı Loglama Aktif</div>
     <canvas id="analyzerCanvas" style="display:none;"></canvas>
 
 <script>
@@ -84,13 +84,13 @@ const codeReverseSpan = document.getElementById('codeReverse');
 canvas.width = 640; canvas.height = 480;
 let currentStream = null; let currentFacingMode = "environment"; 
 let tickInterval = null; let otsuMultiplier = 1.0; 
-let scannedCardsSet = new Set(); let isSystemLocked = false; 
+let scannedCardsSet = new Set(); let cardLogArray = []; // Teşhis geçmişi için dizi açıldı
+let isSystemLocked = false;       
 let lastDetectedRawCode = ""; let rawCodeMatchCount = 0;        
 const STABILITY_REQUIRED_FRAMES = 5; 
 
 threshSlider.addEventListener('input', (e) => {
-    const val = parseInt(e.target.value);
-    otsuMultiplier = val / 100;
+    const val = parseInt(e.target.value); otsuMultiplier = val / 100;
     threshValSpan.innerText = otsuMultiplier.toFixed(2);
 });
 
@@ -100,9 +100,8 @@ function playBeepSound() {
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
         oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(1050, audioCtx.currentTime); 
-        gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime);
-        oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
-        oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.08); 
+        gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime); oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination); oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.08); 
     } catch (e) {}
 }
 
@@ -124,10 +123,9 @@ toggleCamBtn.addEventListener('click', () => {
 });
 
 clearLogBtn.addEventListener('click', () => {
-    scannedCardsSet.clear(); cardCountSpan.innerText = "0";
-    logListDiv.innerText = "Deste sıfırlandı. Yeni kart bekleniyor...";
-    logListDiv.style.color = "#888"; isSystemLocked = false;
-    lastDetectedRawCode = ""; rawCodeMatchCount = 0; resetToWaiting();
+    scannedCardsSet.clear(); cardLogArray = []; cardCountSpan.innerText = "0";
+    logListDiv.innerText = "Deste sıfırlandı. Yeni kart bekleniyor..."; logListDiv.style.color = "#888";
+    isSystemLocked = false; lastDetectedRawCode = ""; rawCodeMatchCount = 0; resetToWaiting();
 });
 </script>
 
@@ -152,6 +150,14 @@ function calculateOtsuThreshold(data, width, height) {
         if (varBetween > varMax) { varMax = varBetween; threshold = i; }
     }
     return threshold;
+}
+
+// Belirtilen isme ait haritadaki ilk binary kodu bulan yardımcı fonksiyon
+function findMapBinaryForCard(cardName) {
+    for (let key in JANNERSTEN_MAP) {
+        if (JANNERSTEN_MAP[key] === cardName) return key;
+    }
+    return "------";
 }
 
 function tick() {
@@ -195,18 +201,20 @@ function tick() {
             let foundCard = JANNERSTEN_MAP[binaryCode];
 
             if (foundCard) {
-                // --- ARADA KAYBOLAN "ZATEN OKUNDU" EMNİYET KİLİDİ GERİ GELDİ ---
                 if (scannedCardsSet.has(foundCard)) {
-                    resultDiv.innerText = `${foundCard} (Zaten Okundu)`;
-                    resultDiv.style.color = "#ff3b30"; resetStability(); return;
+                    resultDiv.innerText = `${foundCard} (Zaten Okundu)`; resultDiv.style.color = "#ff3b30"; resetStability(); return;
                 }
-
                 resultDiv.innerText = "🎉 " + foundCard; resultDiv.style.color = "#00ffcc"; playBeepSound();
                 scannedCardsSet.add(foundCard); cardCountSpan.innerText = scannedCardsSet.size;
-                const logArray = Array.from(scannedCardsSet);
-                logListDiv.innerHTML = logArray.slice().reverse().map((c, idx) => `[${logArray.length - idx}] ${c}`).join("<br>");
-                logListDiv.style.color = "#fff"; isSystemLocked = true;
-                resultDiv.innerText = "Lütfen Kartı Değiştirin..."; resultDiv.style.color = "#ff9500";
+                
+                // --- v7.37 BÜYÜK YENİLİK: SEÇTİĞİNİZ İKİLİ BİNYARY TEŞHİS LOGLAMA ALGORİTMASI ---
+                const dataBinary = findMapBinaryForCard(foundCard);
+                const logLine = `<b>${foundCard}</b> | Data: <span style="color:#00ffcc">${dataBinary}</span> | Canlı: <span style="color:#ff9500">${binaryCode}</span>`;
+                cardLogArray.push(logLine);
+                logListDiv.innerHTML = cardLogArray.slice().reverse().map((line, idx) => `[${cardLogArray.length - idx}] ${line}`).join("<br>");
+                logListDiv.style.color = "#fff";
+                
+                isSystemLocked = true; resultDiv.innerText = "Lütfen Kartı Değiştirin..."; resultDiv.style.color = "#ff9500";
                 setTimeout(() => { isSystemLocked = false; resetStability(); resetToWaiting(); }, 1500);
             } else {
                 resultDiv.innerText = "Tanımsız Kart"; resultDiv.style.color = "#ff9500";
@@ -218,7 +226,7 @@ function tick() {
 function resetStability() { lastDetectedRawCode = ""; rawCodeMatchCount = 0; }
 function resetToWaiting() {
     if (!isSystemLocked) { resultDiv.innerText = "Kart Bekleniyor..."; resultDiv.style.color = "#fff"; codeFlatSpan.innerText = "-"; codeReverseSpan.innerText = "-"; }
-    debugDiv.innerText = "v7.36 Sürümü Aktif";
+    debugDiv.innerText = "v7.37 Kararlı Teşhis Sürümü";
 }
 startCamera(currentFacingMode);
 </script>
