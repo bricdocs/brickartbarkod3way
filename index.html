@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jannersten Chrome Tarayıcı v7.1</title>
+    <title>Jannersten Kesin Çözüm v7.2</title>
     <style>
         body {
             font-family: sans-serif;
@@ -29,10 +29,8 @@
             width: 100%; 
             height: 100%; 
             object-fit: cover; 
-            /* Görüntüyü Chrome ekranında jilet gibi netleştiriyoruz */
             filter: grayscale(1) contrast(5) brightness(0.9);
         }
-        /* DİKEY BARKOD İÇİN DİKEY KIRMIZI ÇİZGİ */
         .guide-line {
             position: absolute;
             top: 5%;
@@ -42,53 +40,30 @@
             background-color: #ff3b30;
             transform: translateX(-50%);
             z-index: 10;
-            box-shadow: 0 0 8px rgba(255, 59, 48, 0.8);
-        }
-        .result-box {
-            margin-top: 10px;
-            padding: 12px;
-            background: #2a2a2a;
-            border-radius: 8px;
-            font-size: 22px;
-            font-weight: bold;
-            text-align: center;
-            min-width: 280px;
-        }
-        .debug-info {
-            margin-top: 10px;
-            font-family: monospace;
-            font-size: 13px;
-            color: #00ffcc;
-            background: #000;
-            padding: 10px;
-            border-radius: 6px;
-            min-width: 280px;
-            line-height: 1.6;
         }
     </style>
 </head>
 <body>
 
-    <h2>Jannersten Chrome v7.1</h2>
-    <p>Kartın barkodunu ortadaki DİKEY KIRMIZI çizgiye hizalayın.</p>
+    <h2>Jannersten v7.2</h2>
+    <p>Kartı kameraya yaklaştırıp dikey çizgiye doğru hizalayın.</p>
 
     <div class="container">
         <video id="webcam" autoplay playsinline muted></video>
         <div class="guide-line" id="guide"></div>
     </div>
 
-    <div class="result-box" id="result">Kart Bekleniyor...</div>
+    <div class="result-box" id="result" style="margin-top:10px; padding:12px; background:#2a2a2a; border-radius:8px; font-size:22px; font-weight:bold; text-align:center; min-width:280px;">Kart Bekleniyor...</div>
     
-    <div class="debug-info" id="debug">
-        Tarama Durumu: Başlatılıyor...<br>
-        Algılanan Geçiş Sayısı: 0<br>
+    <div class="debug-info" id="debug" style="margin-top:10px; font-family:monospace; font-size:13px; color:#00ffcc; background:#000; padding:10px; border-radius:6px; min-width:280px; line-height:1.6;">
+        Tarama Ağı: Geniş Alan Sürücü Açık<br>
+        Algılanan En İyi Geçiş Sayısı: 0<br>
         Okunan Ham Kod: -
     </div>
 
     <canvas id="analyzerCanvas"></canvas>
 
 <script>
-// Maça 4 Kod Haritası (Python ile %100 Uyumlu)
 const JANNERSTEN_MAP = {
     "0101001": "Maça 4 (4 of Spades)",
     "1001010": "Maça 4 (4 of Spades) [Ters]"
@@ -103,10 +78,9 @@ const guideLine = document.getElementById('guide');
 
 async function initCamera() {
     try {
-        const constraints = {
+        const stream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: "environment", width: 640, height: 480 }
-        };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        });
         video.srcObject = stream;
         video.addEventListener('loadedmetadata', () => {
             canvas.width = 640;
@@ -114,37 +88,33 @@ async function initCamera() {
             tick();
         });
     } catch (err) {
-        resultDiv.innerText = "Chrome Kamera İzni Alınamadı!";
-        resultDiv.style.color = "#ff3b30";
+        resultDiv.innerText = "Kamera Başlatılamadı!";
         console.error(err);
     }
 }
 
 function tick() {
     if (video.readyState === video.HAVE_CURRENT_DATA) {
-        // Güvenli kopyalama
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        const midX = Math.floor(canvas.width / 2);
-        
-        let bestX = midX;
         let maxTransitions = 0;
+        let bestX = 320;
         let bestTransitionsArray = [];
 
-        // DİKEY TARAMA MOTORU
-        // Kırmızı dikey çizginin sağındaki ve solundaki 60 piksellik koridorda dikey sütunları tarar
-        for (let x = midX - 30; x < midX + 30; x++) {
+        // --- v7.2 BÜYÜK DEĞİŞİKLİK: DEV TARAMA AĞI ---
+        // Sadece orta 60 pikseli değil, ekranın geniş bir bölümünü (X: 160'tan 480'e kadar) tarar
+        const startX = Math.floor(canvas.width * 0.25);
+        const endX = Math.floor(canvas.width * 0.75);
+
+        for (let x = startX; x < endX; x += 2) { // Performans için 2'şer piksel atlayarak hızlı tarama
             const imgData = ctx.getImageData(x, 0, 1, canvas.height).data;
             
             const binaryColumn = [];
             for (let i = 0; i < imgData.length; i += 4) {
-                // Saf pikselleri griye çeviriyoruz
                 const gray = 0.299 * imgData[i] + 0.587 * imgData[i+1] + 0.114 * imgData[i+2];
-                // Python Otsu eşik simülasyonu (Dengeli filtre)
-                binaryColumn.push(gray < 115 ? 0 : 1); 
+                binaryColumn.push(gray < 110 ? 0 : 1); 
             }
 
-            // Dikey geçişleri hesapla (Üst/alt kenar gürültüleri için %15 kırpma)
             const trans = [];
             const startY = Math.floor(binaryColumn.length * 0.15);
             const endY = Math.floor(binaryColumn.length * 0.85);
@@ -155,7 +125,7 @@ function tick() {
                 }
             }
 
-            // Jannersten standartlarına göre doğru satır kontrolü
+            // Tam Jannersten geçiş aralığı yakalandıysa
             if (trans.length >= 6 && trans.length <= 16) {
                 if (trans.length > maxTransitions) {
                     maxTransitions = trans.length;
@@ -165,7 +135,7 @@ function tick() {
             }
         }
 
-        // Kod Çözme
+        // Kod Çözme ve Eşleştirme
         if (bestTransitionsArray.length >= 7) {
             const widths = [];
             for (let i = 0; i < 7; i++) {
@@ -186,24 +156,21 @@ function tick() {
                 resultDiv.innerText = "🎉 " + foundCard;
                 resultDiv.style.color = "#00ffcc";
                 guideLine.style.backgroundColor = "#00ffcc";
-                guideLine.style.boxShadow = "0 0 12px rgba(0, 255, 204, 0.9)";
             } else {
                 resultDiv.innerText = "Tanımsız Kart";
                 resultDiv.style.color = "#ff9500";
                 guideLine.style.backgroundColor = "#ff9500";
-                guideLine.style.boxShadow = "0 0 12px rgba(255, 149, 0, 0.9)";
             }
             
-            debugDiv.innerHTML = `Tarama Durumu: <b style="color:#00ffcc">Çizgiler Sayılıyor...</b><br>` +
-                                 `Algılanan Geçiş Sayısı: ${bestTransitionsArray.length}<br>` +
+            debugDiv.innerHTML = `Tarama Ağı: <b style="color:#00ffcc">Çizgiler Yakalandı</b><br>` +
+                                 `Algılanan En İyi Geçiş Sayısı: ${bestTransitionsArray.length}<br>` +
                                  `Okunan Ham Kod: <span style="color:#fff; font-weight:bold">${binaryCode}</span> (X:${bestX})`;
         } else {
             resultDiv.innerText = "Kart Bekleniyor...";
             resultDiv.style.color = "#fff";
             guideLine.style.backgroundColor = "#ff3b30";
-            guideLine.style.boxShadow = "0 0 8px rgba(255, 59, 48, 0.8)";
             
-            debugDiv.innerHTML = `Tarama Durumu: Çizgiler dikey taranıyor...<br>` +
+            debugDiv.innerHTML = `Tarama Ağı: Geniş Alan Sürücü Açık<br>` +
                                  `Algılanan En İyi Geçiş Sayısı: ${maxTransitions}<br>` +
                                  `Okunan Ham Kod: -`;
         }
