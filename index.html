@@ -130,6 +130,7 @@ clearLogBtn.addEventListener('click', () => {
 </script>
 
 <script>
+<script>
 function calculateOtsuThreshold(data, width, height) {
     let histogram = new Array(256).fill(0); let totalPixels = 0;
     for (let y = 40; y < 270; y += 2) {
@@ -169,7 +170,7 @@ function tick() {
             const binaryRow = [];
             for (let x = 0; x < canvas.width; x++) {
                 const pixelIndex = (y * canvas.width + x) * 4;
-                const gray = 0.299 * data[pixelIndex] + 0.587 * data[data[pixelIndex+1]] ? 0 : 0.299 * data[pixelIndex] + 0.587 * data[pixelIndex+1] + 0.114 * data[pixelIndex+2];
+                const gray = 0.299 * data[pixelIndex] + 0.587 * data[pixelIndex+1] + 0.114 * data[pixelIndex+2];
                 binaryRow.push(gray < globalThreshold ? 0 : 1);
             }
             const trans = []; const startX = Math.floor(canvas.width * 0.15); const endX = Math.floor(canvas.width * 0.85);
@@ -184,10 +185,8 @@ function tick() {
             const widths = [];
             for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
             
-            // --- v7.38 SİHİRLİ DOKUNUŞ: GEOMETRİK ÇİZGİ ORAN SÜZGECİ ---
+            // --- v7.38 GEOMETRİK ÇİZGİ ORAN SÜZGECİ (YAZIM HATASI DÜZELTİLDİ) ---
             const minW = Math.min(...widths); const maxW = Math.max(...widths);
-            // Karıncalanmaların kalınlıkları birbirine çok yakındır (maxW/minW oranı küçüktür).
-            // Gerçek kartta geniş/dar farkından ötürü bu oran 1.8 katından büyük olmak zorundadır.
             if (maxW / minW < 1.8) { resetStability(); return; }
 
             const sum = widths.reduce((a, b) => a + b, 0); const avgWidth = sum / widths.length;
@@ -235,3 +234,4 @@ startCamera(currentFacingMode);
 </script>
 </body>
 </html>
+
