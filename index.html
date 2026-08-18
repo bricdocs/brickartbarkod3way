@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jannersten Gece Görüşü v7.22</title>
+    <style>
+        body { font-family: sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 10px; margin: 0; }
+        h2 { margin: 5px 0; font-size: 18px; color: #00ffcc; }
+        
+        .container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 4 / 3; margin: 0 auto; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
+        
+        video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+            filter: grayscale(1) contrast(5) brightness(0.9); 
+        }
+        
+        .guide-line { 
+            position: absolute; 
+            top: 50%; 
+            left: 0; 
+            width: 100%; 
+            height: 216px; 
+            background: rgba(0, 255, 204, 0.05); 
+            border-top: 2px dashed #00ffcc;
+            border-bottom: 2px dashed #00ffcc;
+            z-index: 10; 
+        }
+        
+        .control-panel { display: flex; justify-content: center; gap: 10px; margin: 10px auto; max-width: 400px; }
+        button { padding: 10px 15px; border: none; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; }
+        .btn-cam { background: #00ffcc; color: #000; }
+        .btn-clear { background: #ff3b30; color: #fff; }
+        
+        /* v7.22 DEĞİŞİKLİĞİ: Sürgü artık manuel filtre değil, Akıllı Motorun genel duyarlılık çarpanı oldu */
+        .slider-box { margin: 10px auto; max-width: 350px; background: #222; padding: 8px; border-radius: 8px; border: 1px solid #444; font-size: 13px; color: #aaa; }
+        .slider-box input { width: 80%; accent-color: #00ffcc; }
+
+        .result-box { margin: 5px auto; padding: 10px; background: #1e1e1e; border-radius: 8px; font-size: 20px; font-weight: bold; width: 280px; border: 1px solid #333; }
+        
+        .log-container { margin: 10px auto; max-width: 350px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; text-align: left; }
+        .log-title { font-size: 12px; color: #00ffcc; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 3px; }
+        .log-list { font-family: monospace; font-size: 14px; color: #fff; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
+
+        .debug-info { margin: 5px auto; font-family: monospace; font-size: 11px; color: #888; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <h2>Jannersten v7.22 (Akıllı Eşikleme)</h2>
+    
+    <div class="control-panel">
+        <button class="btn-cam" id="toggleCamBtn">Kamera Değiştir</button>
+        <button class="btn-clear" id="clearLogBtn">Desteyi Sıfırla</button>
+    </div>
+
+    <div class="slider-box">
+        <label for="threshSlider">İnce İşıq Toleransı (Çarpan): <span id="threshVal">1.0</span></label><br>
+        <input type="range" id="threshSlider" min="80" max="120" value="100">
+    </div>
+
+    <div class="container">
+        <video id="webcam" autoplay playsinline muted></video>
+        <div class="guide-line"></div>
+    </div>
+
+    <div class="result-box" id="result">Kart Bekleniyor...</div>
+    
+    <div class="log-container">
+        <div class="log-title">Okunan Kartlar Listesi (Toplam: <span id="cardCount">0</span>/52):</div>
+        <div class="log-list" id="logList">Henüz kart okunmadı.</div>
+    </div>
+
+    <div class="debug-info" id="debug">Akıllı Eşik Motoru Aktif</div>
+
+    <canvas id="analyzerCanvas" style="display:none;"></canvas>
+
+<script>
+const JANNERSTEN_MAP = {
+    "0101001": "Maça 4",
+    "1001010": "Maça 4",
+    "0101100": "Maça 5",
+    "0011010": "Maça 5"
+};
+
+const video = document.getElementById('webcam');
+const canvas = document.getElementById('analyzerCanvas');
+const ctx = canvas.getContext('2d');
+const resultDiv = document.getElementById('result');
+const debugDiv = document.getElementById('debug');
+const logListDiv = document.getElementById('logList');
+const cardCountSpan = document.getElementById('cardCount');
+const toggleCamBtn = document.getElementById('toggleCamBtn');
+const clearLogBtn = document.getElementById('clearLogBtn');
+const threshSlider = document.getElementById('threshSlider');
+const threshValSpan = document.getElementById('threshVal');
+
+canvas.width = 640;
+canvas.height = 480;
+
+let currentStream = null;
+let currentFacingMode = "environment"; 
+let tickInterval = null;
+let sensitivityMultiplier = 1.0; // Slider çarpanı (varsayılan dengeli)
+
+let scannedCardsSet = new Set(); 
+let isSystemLocked = false; 
+
+let lastDetectedRawCode = "";     
+let rawCodeMatchCount = 0;        
+const STABILITY_REQUIRED_FRAMES = 5; 
+
+threshSlider.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    sensitivityMultiplier = val / 100;
+    threshValSpan.innerText = sensitivityMultiplier.toFixed(2);
+});
+
+function playBeepSound() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(1050, audioCtx.currentTime); 
+        gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.08); 
+    } catch (e) {}
+}
+
+async function startCamera(facingMode) {
+    if (currentStream) currentStream.getTracks().forEach(track => track.stop());
+    if (tickInterval) clearInterval(tickInterval);
+
+    try {
+        currentStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 640, height: 480, facingMode: facingMode }
+        });
+        video.srcObject = currentStream;
+        
+        setTimeout(() => {
+            tickInterval = setInterval(tick, 1000 / 30);
+        }, 1200);
+    } catch (err) {
+        resultDiv.innerText = "Kamera Başlatılamadı!";
+    }
+}
+
+toggleCamBtn.addEventListener('click', () => {
+    currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+    startCamera(currentFacingMode);
+});
+
+clearLogBtn.addEventListener('click', () => {
+    scannedCardsSet.clear();
+    cardCountSpan.innerText = "0";
+    logListDiv.innerText = "Deste sıfırlandı. Yeni kart bekleniyor...";
+    logListDiv.style.color = "#888";
+    isSystemLocked = false;
+    lastDetectedRawCode = "";
+    rawCodeMatchCount = 0;
+    resetToWaiting();
+});
+
+function tick() {
+    if (video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const fullFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = fullFrame.data;
+        const midY = 240;
+
+        let maxTransitions = 0;
+        let bestTransitionsArray = [];
+        let bestYFound = 240;
+
+        for (let y = 40; y < 270; y += 2) {
+            
+            // --- v7.22 YENİLİK: SATIR BAZLI AKILLI KONTRAST TESPİTİ (TELEFONU ISITMAZ) ---
+            // İlk döngüde sadece o satırdaki en karanlık ve en aydınlık pikseller bulunur
+            let minGray = 255;
+            let maxGray = 0;
+            const tempGrayRow = [];
+
+            for (let x = 0; x < canvas.width; x++) {
+                const pixelIndex = (y * canvas.width + x) * 4;
+                const r = data[pixelIndex];
+                const g = data[pixelIndex + 1];
+                const b = data[pixelIndex + 2];
+                const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                
+                tempGrayRow.push(gray);
+                if (gray < minGray) minGray = gray;
+                if (gray > maxGray) maxGray = gray;
+            }
+
+            // O anki satırın ışığına göre dinamik orta eşik noktası hesaplanır (Otsu Simülasyonu)
+            // Slider çarpanı ile odadaki ekstra durumlara göre milimetrik esnetilebilir
+            const adaptiveThreshold = ((minGray + maxGray) / 2) * sensitivityMultiplier;
+
+            const binaryRow = [];
+            for (let x = 0; x < canvas.width; x++) {
+                binaryRow.push(tempGrayRow[x] < adaptiveThreshold ? 0 : 1);
+            }
+
+            const trans = [];
+            const startX = Math.floor(canvas.width * 0.15);
+            const endX = Math.floor(canvas.width * 0.85);
+            
+            for (let i = startX; i < endX; i++) {
+                if (binaryRow[i] !== binaryRow[i+1]) trans.push(i);
+            }
+
+            if (trans.length >= 7 && trans.length <= 15) {
+                if (trans.length > maxTransitions) {
+                    maxTransitions = trans.length;
+                    bestTransitionsArray = trans;
+                    bestYFound = y;
+                }
+            }
+        }
+
+        if (bestTransitionsArray.length >= 7) {
+            if (isSystemLocked) {
+                return;
+            }
+
+            const widths = [];
+            for (let i = 0; i < 7; i++) widths.push(bestTransitionsArray[i+1] - bestTransitionsArray[i]);
+
+            const sum = widths.reduce((a, b) => a + b, 0);
+            const avgWidth = sum / widths.length;
+
+            if (avgWidth < 3.0) {
+                resetStability();
+                return;
+            }
+
+            let binaryCode = "";
+            for (let i = 0; i < widths.length; i++) {
+                binaryCode += (widths[i] > avgWidth) ? "1" : "0";
+            }
+
+            // Kararlılık Süzgeci Kontrolü (5 Kare)
+            if (binaryCode === lastDetectedRawCode) {
+                rawCodeMatchCount++;
+            } else {
+                lastDetectedRawCode = binaryCode;
+                rawCodeMatchCount = 1;
+            }
+
+            if (rawCodeMatchCount < STABILITY_REQUIRED_FRAMES) {
+                debugDiv.innerText = `Sinyal Filtreleniyor... (${rawCodeMatchCount}/${STABILITY_REQUIRED_FRAMES})`;
+                return;
+            }
+
+            let foundCard = JANNERSTEN_MAP[binaryCode];
+
+            if (foundCard) {
+                if (scannedCardsSet.has(foundCard)) {
+                    resultDiv.innerText = `${foundCard} (Zaten Okundu)`;
+                    resultDiv.style.color = "#ff3b30";
+                    resetStability();
+                    return;
+                }
+
+                resultDiv.innerText = "🎉 " + foundCard;
+                resultDiv.style.color = "#00ffcc";
+                
+                playBeepSound();
+                scannedCardsSet.add(foundCard);
+                cardCountSpan.innerText = scannedCardsSet.size;
+                
+                const logArray = Array.from(scannedCardsSet);
+                logListDiv.innerHTML = logArray.slice().reverse().map((c, idx) => `[${logArray.length - idx}] ${c}`).join("<br>");
+                logListDiv.style.color = "#fff";
+                
+                isSystemLocked = true;
+                resultDiv.innerText = "Lütfen Kartı Değiştirin...";
+                resultDiv.style.color = "#ff9500";
+
+                setTimeout(() => {
+                    isSystemLocked = false;
+                    resetStability();
+                    resetToWaiting();
+                }, 1500);
+                
+            } else {
+                resultDiv.innerText = "Tanımsız Kart";
+                resultDiv.style.color = "#ff9500";
+            }
+            debugDiv.innerText = `Geçiş: ${bestTransitionsArray.length} | Satır: ${bestYFound} | Kararlı Kod: ${binaryCode}`;
+        } else {
+            resetStability();
+        }
+    }
+}
+
+function resetStability() {
+    lastDetectedRawCode = "";
+    rawCodeMatchCount = 0;
+}
+
+function resetToWaiting() {
+    if (!isSystemLocked) {
+        resultDiv.innerText = "Kart Bekleniyor... (Flaşsız Mod)";
+        resultDiv.style.color = "#fff";
+    }
+    debugDiv.innerText = "Yazılımsal Akıllı Eşikleyici v7.22 Aktif";
+}
+
+startCamera(currentFacingMode);
+</script>
+</body>
+</html>
